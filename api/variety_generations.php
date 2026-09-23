@@ -20,6 +20,11 @@
  * existing one's description. This is automatic and needs no manual cleanup
  * after the one-time migration is applied.
  *
+ * REMOVING A GENERATION RECORD: DELETE below removes one row by its own
+ * primary key (variety_generation_id), independent of the other rows for
+ * that variety — this is what the Admin "Edit Variety" modal's "Remove"
+ * button on each generation badge calls.
+ *
  * GET    /api/variety_generations.php?variety_id=3   → list generations for a variety
  * GET    /api/variety_generations.php                → list all
  * POST   /api/variety_generations.php                → create OR update-in-place { variety_id, generation_classification, generation_desc }
