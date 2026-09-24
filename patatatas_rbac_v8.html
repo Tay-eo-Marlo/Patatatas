@@ -832,10 +832,13 @@
       <div class="page-body fade-in">
         <div class="alert alert-info">ℹ️ You can update stock quantities for your listed varieties. To <strong>add a new variety</strong>, contact BSU-NPRCRTC Admin for approval.</div>
         <div class="card">
-          <div class="card-header"><span class="card-title">Nelio Compelio Farm — My Varieties (5)</span><span class="text-muted text-sm">BPI Accreditation: BPI-2022-0048 · Active</span></div>
+          <div class="card-header">
+            <span class="card-title" id="producer-stock-title">Nelio Compelio Farm — My Varieties (5)</span>
+            <button class="btn btn-primary btn-sm" onclick="openProducerAddStock()">＋ Add Stock Entry</button>
+          </div>
           <table class="data-table">
-            <thead><tr><th>Seed Variety</th><th>Type</th><th>Gen</th><th>Current Qty (kg)</th><th>Price/kg</th><th>Status</th><th>Last Updated</th><th>Action</th></tr></thead>
-            <tbody>
+            <thead><tr><th>Seed Variety</th><th>Type</th><th>Gen</th><th>Current Qty</th><th>Price</th><th>Status</th><th>Visibility</th><th>Last Updated</th><th>Actions</th></tr></thead>
+            <tbody id="producer-stock-tbody">
               <tr><td><strong>Granola</strong><br><span class="text-muted">Solanum tuberosum</span></td><td>🥔 Potato</td><td>🧬 G1</td><td class="font-mono" style="color:var(--warning);font-weight:700;">186 kg ⚠️</td><td class="font-mono">₱78.00</td><td><span class="badge badge-low">● Low Stock</span></td><td class="text-muted">Mar 20, 2026</td><td><button class="btn btn-ghost btn-sm" onclick="openProducerUpdateStock('Granola','Solanum tuberosum','🥔 Potato',186)">Update Qty</button></td></tr>
               <tr><td><strong>APO 1</strong><br><span class="text-muted">Ipomoea batatas</span></td><td>🍠 Sweet Potato</td><td>🧬 G1</td><td class="font-mono">240 kg</td><td class="font-mono">₱40.00</td><td><span class="badge badge-available">● Available</span></td><td class="text-muted">Mar 25, 2026</td><td><button class="btn btn-ghost btn-sm" onclick="openProducerUpdateStock('APO 1','Ipomoea batatas','🍠 Sweet Potato',240)">Update Qty</button></td></tr>
               <tr><td><strong>Cosima B</strong><br><span class="text-muted">Solanum tuberosum</span></td><td>🥔 Potato</td><td>🧬 G2</td><td class="font-mono">290 kg</td><td class="font-mono">₱81.00</td><td><span class="badge badge-available">● Available</span></td><td class="text-muted">Mar 22, 2026</td><td><button class="btn btn-ghost btn-sm" onclick="openProducerUpdateStock('Cosima B','Solanum tuberosum','🥔 Potato',290)">Update Qty</button></td></tr>
@@ -1475,6 +1478,48 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary" onclick="closeModal('modal-farmer-seed-detail')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Producer: Edit price / visibility -->
+<div id="modal-producer-edit-stock" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header"><span class="modal-title">✏️ Edit — <span id="pes-title">Variety</span></span><button class="modal-close" onclick="closeModal('modal-producer-edit-stock')">×</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Unit Price (₱)</label><input class="form-control" type="number" min="0" step="0.01" id="pes-price"></div>
+        <div class="form-group"><label class="form-label">Visibility</label>
+          <select class="form-control" id="pes-public"><option value="1">Public (shown in catalogs)</option><option value="0">Private (hidden)</option></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Remarks</label><textarea class="form-control" id="pes-remarks" rows="2" placeholder="Reason for change…"></textarea></div>
+      <div style="font-size:11px;color:var(--muted);">To change quantity, use <strong>Update Qty</strong>.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-producer-edit-stock')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitProducerEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Producer: Add stock entry for an existing variety -->
+<div id="modal-producer-add-stock" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header"><span class="modal-title">＋ Add Stock Entry</span><button class="modal-close" onclick="closeModal('modal-producer-add-stock')">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Variety</label><select class="form-control" id="pas-variety" onchange="loadProducerAddUnits()"></select></div>
+      <div class="form-group"><label class="form-label">Unit</label><select class="form-control" id="pas-unit"></select></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Quantity</label><input class="form-control" type="number" min="0" id="pas-qty" placeholder="0"></div>
+        <div class="form-group"><label class="form-label">Unit Price (₱)</label><input class="form-control" type="number" min="0" step="0.01" id="pas-price" placeholder="0.00"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Visibility</label>
+        <select class="form-control" id="pas-public"><option value="1">Public</option><option value="0">Private</option></select></div>
+      <div style="font-size:11px;color:var(--muted);">Variety not listed? Ask BSU-NPRCRTC Admin to add it first.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-producer-add-stock')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitProducerAddStock()">Add Entry</button>
     </div>
   </div>
 </div>

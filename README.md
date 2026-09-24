@@ -122,3 +122,7 @@ breeding pipeline (all its G0/G1/G2 stages), not a single batch's lineage —
 there's no parent-batch foreign key in the given schema, so DB-backed cards
 show all of a variety's generation records rather than one "parent batch" per
 row like the offline demo data does.
+
+Role	Email	Password	Condition
+Admin	admin.test@bsu.edu.ph	Test1234	Only if you ran php sql/create_test_admin.php admin.test@bsu.edu.ph Test1234
+Producer (Renz / NPRCRTC)	rheinzmarcelo@gmail.com	Renz12345	Only if you ran the password-reset SQL I gave you last time

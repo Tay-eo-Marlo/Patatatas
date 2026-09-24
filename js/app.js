@@ -103,7 +103,7 @@ async function tryLoadLiveCatalog() {
     for (let i = seeds.length - 1; i >= 0; i--) { if (seeds[i].dbId !== undefined) seeds.splice(i, 1); }
     seeds.unshift(...liveSeeds);
     usingLiveBackend = true;
-    applyAdminFilter(); applyProducerFilter(); applyFarmerFilter(); applyPublicFilter();
+    applyAdminFilter(); applyProducerFilter(); applyFarmerFilter(); applyPublicFilter(); renderProducerStock();
     showToast('🟢 Connected to live database — ' + liveSeeds.length + ' record(s) loaded from rootcrops.sql.');
   } catch (e) {
     usingLiveBackend = false;
@@ -411,14 +411,16 @@ function applyProducerFilter(){
   renderCatalog(seeds.filter(s=>(producerFilter==='all'||s.type===producerFilter)&&(!q||s.name.toLowerCase().includes(q))),'producerCatalogGrid','producer');
 }
 
+const isVisibleToBuyers = s => s.dbId === undefined || s.isPublic;
+
 function applyFarmerFilter(){
   const q=(document.getElementById('farmerCatalogSearch')?.value||'').toLowerCase();
-  renderCatalog(seeds.filter(s=>(farmerFilter==='all'||s.type===farmerFilter)&&(!q||s.name.toLowerCase().includes(q))),'farmerCatalogGrid','farmer');
+  renderCatalog(seeds.filter(s=>isVisibleToBuyers(s)&&(farmerFilter==='all'||s.type===farmerFilter)&&(!q||s.name.toLowerCase().includes(q))),'farmerCatalogGrid','farmer');
 }
 
 function applyPublicFilter(){
   const q=(document.getElementById('publicSearchInput')?.value||'').toLowerCase();
-  renderCatalog(seeds.filter(s=>(publicFilter==='all'||s.type===publicFilter)&&(!q||s.name.toLowerCase().includes(q)||s.scientific.toLowerCase().includes(q))),'publicCatalogGrid','public');
+  renderCatalog(seeds.filter(s=>isVisibleToBuyers(s)&&(publicFilter==='all'||s.type===publicFilter)&&(!q||s.name.toLowerCase().includes(q)||s.scientific.toLowerCase().includes(q))),'publicCatalogGrid','public');
 }
 
 // ── ROLE SELECTION (login) ─────────────────────────────────
@@ -476,6 +478,7 @@ function producerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
   goToScreen(screenId);
   if(screenId==='screen-producer-catalog') applyProducerFilter();
+  if(screenId==='screen-producer-inventory') renderProducerStock();
 }
 function farmerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
@@ -1202,6 +1205,7 @@ async function submitProducerUpdateStock() {
         action_type: actionType, quantity: qty, reason_for_change: remarks || '(no reason given)',
         user_id: actor.user_id, user_email: actor.email,
         update_done_by_fname: actor.fname, update_done_by_lname: actor.lname,
+        acting_producer_id: currentUser ? currentUser.producer_id : undefined,
       });
       closeModal('modal-producer-update-stock');
       showToast('✅ ' + variety + ' updated to ' + result.current_stock_quantity.toLocaleString() + ' ' + _liveStockTarget.unitAbbrev + ' in the database.');
@@ -1230,6 +1234,138 @@ async function submitProducerUpdateStock() {
   showToast(newQty === 0
     ? '✅ ' + variety + ' updated to 0 kg — auto-marked Unavailable. Admin notified. (offline demo)'
     : '✅ ' + variety + ' updated to ' + newQty.toLocaleString() + ' kg. Admin notified. (offline demo)');
+}
+
+// ═══ PRODUCER: MY STOCK (live DB) ═══════════════════════════
+let _editStockTarget = null;
+let _pasVarieties = [];
+
+function actorInfo() {
+  const a = currentUser || { user_id: 0, email: '', fname: '', lname: '' };
+  return {
+    user_id: a.user_id, user_email: a.email,
+    update_done_by_fname: a.fname, update_done_by_lname: a.lname,
+    acting_producer_id: a.producer_id || undefined,
+  };
+}
+function findStockByDbId(id) { return seeds.find(x => x.dbId === id); }
+
+function renderProducerStock() {
+  const tbody = document.getElementById('producer-stock-tbody');
+  // Only takes over from the static demo rows when logged in as a real producer.
+  if (!tbody || !usingLiveBackend || !currentUser || !currentUser.producer_id) return;
+
+  const mine = seeds.filter(s => s.dbId !== undefined && s.producerId === currentUser.producer_id);
+  const title = document.getElementById('producer-stock-title');
+  if (title) title.textContent = (currentUser.producer_name || 'My') + ' — My Varieties (' + mine.length + ')';
+
+  if (!mine.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:28px;">No stock entries yet. Click “＋ Add Stock Entry” to list a variety.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = mine.map(s => `<tr>
+    <td><strong>${s.name}</strong><br><span class="text-muted">${s.scientific}</span></td>
+    <td>${s.emoji} ${s.type.charAt(0).toUpperCase() + s.type.slice(1)}</td>
+    <td>${s.generations ? genBadges(s.generations) : ''}</td>
+    <td class="font-mono" style="font-weight:700;">${s.qty}<br><span class="text-muted" style="font-size:10px;">${s.unitLabel}</span></td>
+    <td class="font-mono">${s.price}</td>
+    <td>${statusBadge(s.status)}</td>
+    <td>${s.isPublic ? '<span class="badge badge-available">👁 Public</span>' : '<span class="badge badge-unavailable">🔒 Private</span>'}</td>
+    <td class="text-muted">${s.lastUpdated}</td>
+    <td><div class="flex-gap">
+      <button class="btn btn-ghost btn-sm" onclick="openLiveStockUpdate(findStockByDbId(${s.dbId}))">Update Qty</button>
+      <button class="btn btn-ghost btn-sm" onclick="openProducerEdit(${s.dbId})">✏️ Edit</button>
+      <button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="deleteProducerStock(${s.dbId})">🗑️ Delete</button>
+    </div></td>
+  </tr>`).join('');
+}
+
+// ── Edit price / visibility ─────────────────────────────────
+function openProducerEdit(dbId) {
+  const s = findStockByDbId(dbId);
+  if (!s) return;
+  _editStockTarget = s;
+  document.getElementById('pes-title').textContent = s.name;
+  document.getElementById('pes-price').value = s.priceNum;
+  document.getElementById('pes-public').value = s.isPublic ? '1' : '0';
+  document.getElementById('pes-remarks').value = '';
+  openModal('modal-producer-edit-stock');
+}
+async function submitProducerEdit() {
+  const s = _editStockTarget;
+  if (!s) return;
+  const price = parseFloat(document.getElementById('pes-price').value);
+  if (isNaN(price) || price < 0) { showToast('⚠️ Please enter a valid price.'); return; }
+  try {
+    await apiSend('PUT', 'producer_crop_stocks.php?id=' + s.dbId, {
+      ...actorInfo(),
+      action_type: 'Exact', quantity: s.qtyNum,           // quantity unchanged
+      unit_price: price,
+      is_public: document.getElementById('pes-public').value === '1',
+      reason_for_change: document.getElementById('pes-remarks').value.trim() || 'Price/visibility edit',
+    });
+    closeModal('modal-producer-edit-stock');
+    showToast('✅ ' + s.name + ' updated in the database.');
+    await tryLoadLiveCatalog();
+  } catch (e) { showToast('⚠️ ' + e.message); }
+}
+
+// ── Delete ──────────────────────────────────────────────────
+async function deleteProducerStock(dbId) {
+  const s = findStockByDbId(dbId);
+  if (!s) return;
+  if (!confirm('Delete your stock entry for "' + s.name + '" (' + s.qty + ')?\nThis removes it from all catalogs. The change is kept in the stock log.')) return;
+  try {
+    await apiSend('DELETE', 'producer_crop_stocks.php?id=' + dbId, actorInfo());
+    showToast('✅ ' + s.name + ' stock entry deleted.');
+    await tryLoadLiveCatalog();
+  } catch (e) { showToast('⚠️ ' + e.message); }
+}
+
+// ── Add stock entry for an existing variety ─────────────────
+async function openProducerAddStock() {
+  if (!usingLiveBackend || !currentUser || !currentUser.producer_id) {
+    showToast('⚠️ Sign in as a producer on the live backend to add stock.'); return;
+  }
+  try {
+    _pasVarieties = await apiGet('varieties.php');
+    const sel = document.getElementById('pas-variety');
+    sel.innerHTML = _pasVarieties.map(v => `<option value="${v.variety_id}">${v.variety_name} (${v.crop_name})</option>`).join('');
+    document.getElementById('pas-qty').value = '';
+    document.getElementById('pas-price').value = '';
+    document.getElementById('pas-public').value = '1';
+    await loadProducerAddUnits();
+    openModal('modal-producer-add-stock');
+  } catch (e) { showToast('⚠️ Could not load varieties: ' + e.message); }
+}
+async function loadProducerAddUnits() {
+  const v = _pasVarieties.find(x => String(x.variety_id) === document.getElementById('pas-variety').value);
+  const unitSel = document.getElementById('pas-unit');
+  if (!v) { unitSel.innerHTML = ''; return; }
+  const units = await apiGet('rootcrop_units.php?crop_id=' + v.crop_id);
+  unitSel.innerHTML = units.length
+    ? units.map(u => `<option value="${u.unit_id}">${u.unit_unabbreviated}</option>`).join('')
+    : '<option value="">No units defined for this crop — ask Admin</option>';
+}
+async function submitProducerAddStock() {
+  const varietyId = document.getElementById('pas-variety').value;
+  const unitId = document.getElementById('pas-unit').value;
+  const qty = parseInt(document.getElementById('pas-qty').value, 10);
+  const price = parseFloat(document.getElementById('pas-price').value);
+  if (!varietyId || !unitId) { showToast('⚠️ Please choose a variety and unit.'); return; }
+  if (isNaN(qty) || qty < 0) { showToast('⚠️ Please enter a valid quantity.'); return; }
+  if (isNaN(price) || price < 0) { showToast('⚠️ Please enter a valid price.'); return; }
+  try {
+    await apiSend('POST', 'producer_crop_stocks.php', {
+      ...actorInfo(),
+      crop_variety_id: Number(varietyId), producer_id: currentUser.producer_id, unit_id: Number(unitId),
+      stock_amount: qty, unit_price: price,
+      is_public: document.getElementById('pas-public').value === '1',
+    });
+    closeModal('modal-producer-add-stock');
+    showToast('✅ Stock entry added to the database.');
+    await tryLoadLiveCatalog();
+  } catch (e) { showToast('⚠️ ' + e.message); }
 }
 
 // ═══════════════════════════════════════════════════════════

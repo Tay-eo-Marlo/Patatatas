@@ -59,6 +59,32 @@ function attachGenerations(PDO $pdo, array $rows): array
     return $rows;
 }
 
+/** Append one audit row to producer_stock_logs. $ctx = request body (user info). */
+function writeStockLog(PDO $pdo, array $ctx, array $row, string $action,
+                       int $oldQty, int $newQty, float $oldPrice, float $newPrice,
+                       string $oldStatus, string $newStatus): void
+{
+    $log = $pdo->prepare('INSERT INTO producer_stock_logs
+        (user_id, user_email, update_done_by_fname, update_done_by_lname, producer_id, producer_name,
+         crop, crop_variety, unit_used, old_unit_price, current_unit_price, quantity_action_type,
+         old_stock_quantity, current_stock_quantity, old_status, current_status, reason_for_change, update_date)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())');
+    $log->execute([
+        $ctx['user_id'] ?? 0, $ctx['user_email'] ?? '', $ctx['update_done_by_fname'] ?? '', $ctx['update_done_by_lname'] ?? '',
+        $row['producer_id'], $row['producer_name'], $row['crop_name'], $row['variety_name'], $row['unit_unabbreviated'],
+        $oldPrice, $newPrice, $action, $oldQty, $newQty, $oldStatus, $newStatus,
+        $ctx['reason_for_change'] ?? '',
+    ]);
+}
+
+/** Light ownership guard (see note below). */
+function assertOwner(array $ctx, int $producerId): void
+{
+    if (isset($ctx['acting_producer_id']) && (int)$ctx['acting_producer_id'] !== $producerId) {
+        respond(['error' => 'You can only modify your own stock entries.'], 403);
+    }
+}
+
 switch ($method) {
     case 'GET':
         if (isset($_GET['id'])) {
@@ -82,10 +108,25 @@ switch ($method) {
     case 'POST':
         $d = body();
         requireFields($d, ['crop_variety_id', 'producer_id', 'unit_id', 'stock_amount', 'unit_price']);
+        assertOwner($d, (int)$d['producer_id']);
+        $dup = $pdo->prepare('SELECT 1 FROM producer_crop_stocks WHERE crop_variety_id=? AND producer_id=? AND unit_id=?');
+        $dup->execute([$d['crop_variety_id'], $d['producer_id'], $d['unit_id']]);
+        if ($dup->fetch()) respond(['error' => 'You already have a stock entry for this variety and unit. Edit it instead.'], 409);
+
         $isPublic = isset($d['is_public']) ? (int)!!$d['is_public'] : 1;
         $stmt = $pdo->prepare('INSERT INTO producer_crop_stocks (crop_variety_id, producer_id, unit_id, stock_amount, unit_price, is_public, last_update_date) VALUES (?, ?, ?, ?, ?, ?, NOW())');
         $stmt->execute([$d['crop_variety_id'], $d['producer_id'], $d['unit_id'], $d['stock_amount'], $d['unit_price'], $isPublic]);
-        respond(['producer_crop_stock_id' => (int)$pdo->lastInsertId()], 201);
+        $newId = (int)$pdo->lastInsertId();
+
+        if (!empty($d['user_id'])) {
+            $s = $pdo->prepare(CATALOG_SELECT . ' WHERE pcs.producer_crop_stock_id = ?');
+            $s->execute([$newId]);
+            $row = $s->fetch();
+            $d['reason_for_change'] = $d['reason_for_change'] ?? 'New stock entry';
+            writeStockLog($pdo, $d, $row, 'Exact', 0, (int)$d['stock_amount'], 0, (float)$d['unit_price'],
+                          'Private', $isPublic ? 'Public' : 'Private');
+        }
+        respond(['producer_crop_stock_id' => $newId], 201);
         break;
 
     case 'PUT':
@@ -98,7 +139,10 @@ switch ($method) {
         $stmt->execute([$_GET['id']]);
         $current = $stmt->fetch();
         if (!$current) { $pdo->rollBack(); respond(['error' => 'Stock entry not found'], 404); }
-
+        if (isset($d['acting_producer_id']) && (int)$d['acting_producer_id'] !== (int)$current['producer_id']) {
+            $pdo->rollBack();
+            respond(['error' => 'You can only modify your own stock entries.'], 403);
+        }
         $oldQty     = (int)$current['stock_amount'];
         $oldPrice   = (float)$current['unit_price'];
         $oldPublic  = (int)$current['is_public'];
@@ -148,8 +192,19 @@ switch ($method) {
 
     case 'DELETE':
         if (!isset($_GET['id'])) respond(['error' => 'Missing ?id='], 422);
+        $d = body();
+        $s = $pdo->prepare(CATALOG_SELECT . ' WHERE pcs.producer_crop_stock_id = ?');
+        $s->execute([$_GET['id']]);
+        $row = $s->fetch();
+        if (!$row) respond(['deleted' => false], 404);
+        assertOwner($d, (int)$row['producer_id']);
+
         $stmt = $pdo->prepare('DELETE FROM producer_crop_stocks WHERE producer_crop_stock_id = ?');
         $stmt->execute([$_GET['id']]);
+        $d['reason_for_change'] = $d['reason_for_change'] ?? 'Stock entry removed';
+        writeStockLog($pdo, $d, $row, 'Deleted', (int)$row['stock_amount'], 0,
+                      (float)$row['unit_price'], (float)$row['unit_price'],
+                      $row['is_public'] ? 'Public' : 'Private', 'Removed');
         respond(['deleted' => $stmt->rowCount() > 0]);
         break;
 
