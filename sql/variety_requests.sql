@@ -1,0 +1,26 @@
+-- ADDITIVE ONLY: does not alter any table from rootcrops.sql
+CREATE TABLE `variety_requests` (
+  `request_id` int NOT NULL AUTO_INCREMENT,
+  `producer_id` int NOT NULL,
+  `requested_by_user_id` int NOT NULL,
+  `crop_id` int NOT NULL,
+  `variety_name` varchar(256) COLLATE utf8mb4_general_ci NOT NULL,
+  `variety_desc` varchar(256) COLLATE utf8mb4_general_ci NOT NULL,
+  `generation_classification` int NOT NULL DEFAULT 0,
+  `alt_names` varchar(256) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `status` varchar(20) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Pending',
+  `admin_note` varchar(256) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `created_variety_id` int DEFAULT NULL,
+  `reviewed_by_user_id` int DEFAULT NULL,
+  `request_date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `reviewed_date` datetime DEFAULT NULL,
+  PRIMARY KEY (`request_id`),
+  KEY `producer_id` (`producer_id`),
+  KEY `crop_id` (`crop_id`),
+  KEY `requested_by_user_id` (`requested_by_user_id`),
+  KEY `created_variety_id` (`created_variety_id`),
+  CONSTRAINT `variety_requests_ibfk_1` FOREIGN KEY (`producer_id`) REFERENCES `producers` (`producer_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `variety_requests_ibfk_2` FOREIGN KEY (`crop_id`) REFERENCES `rootcrops` (`crop_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `variety_requests_ibfk_3` FOREIGN KEY (`requested_by_user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `variety_requests_ibfk_4` FOREIGN KEY (`created_variety_id`) REFERENCES `varieties` (`variety_id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

@@ -473,12 +473,13 @@ function adminNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
   goToScreen(screenId);
   if(screenId==='screen-admin-orders') renderAdminOrders();
+  if(screenId==='screen-admin-catalog') loadAdminRequests();
 }
 function producerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
   goToScreen(screenId);
   if(screenId==='screen-producer-catalog') applyProducerFilter();
-  if(screenId==='screen-producer-inventory') renderProducerStock();
+  if(screenId==='screen-producer-inventory'){ renderProducerStock(); loadProducerRequests(); }
 }
 function farmerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
@@ -1234,6 +1235,139 @@ async function submitProducerUpdateStock() {
   showToast(newQty === 0
     ? '✅ ' + variety + ' updated to 0 kg — auto-marked Unavailable. Admin notified. (offline demo)'
     : '✅ ' + variety + ' updated to ' + newQty.toLocaleString() + ' kg. Admin notified. (offline demo)');
+}
+
+// ═══ VARIETY REQUESTS (producer → admin approval) ═══════════
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+const reqStatusBadge = {
+  Pending:  '<span class="badge badge-low">⏳ Pending</span>',
+  Approved: '<span class="badge badge-available">✅ Approved</span>',
+  Rejected: '<span class="badge badge-unavailable">❌ Rejected</span>',
+};
+
+// ── Producer side ───────────────────────────────────────────
+async function openVarietyRequest() {
+  if (!usingLiveBackend || !currentUser || !currentUser.producer_id) {
+    showToast('⚠️ Sign in as a producer on the live backend to request a variety.'); return;
+  }
+  try {
+    const crops = await apiGet('rootcrops.php');
+    document.getElementById('vr-crop').innerHTML = crops.map(c => `<option value="${c.crop_id}">${escHtml(c.crop_name)}</option>`).join('');
+    ['vr-name','vr-desc','vr-alt'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('vr-gen').value = '0';
+    openModal('modal-variety-request');
+  } catch (e) { showToast('⚠️ Could not load crop types: ' + e.message); }
+}
+
+async function submitVarietyRequest() {
+  const name = document.getElementById('vr-name').value.trim();
+  const desc = document.getElementById('vr-desc').value.trim();
+  const cropId = document.getElementById('vr-crop').value;
+  if (!name) { showToast('⚠️ Please enter a variety name.'); return; }
+  if (!desc) { showToast('⚠️ Please enter a description or scientific name.'); return; }
+  if (!cropId) { showToast('⚠️ Please choose a crop type.'); return; }
+  try {
+    await apiSend('POST', 'variety_requests.php', {
+      producer_id: currentUser.producer_id,
+      requested_by_user_id: currentUser.user_id,
+      crop_id: Number(cropId),
+      variety_name: name,
+      variety_desc: desc,
+      generation_classification: Number(document.getElementById('vr-gen').value),
+      alt_names: document.getElementById('vr-alt').value.trim(),
+    });
+    closeModal('modal-variety-request');
+    showToast('✅ Request for "' + name + '" sent to Admin for review.');
+    loadProducerRequests();
+  } catch (e) { showToast('⚠️ ' + e.message); }
+}
+
+async function loadProducerRequests() {
+  const tbody = document.getElementById('producer-requests-tbody');
+  if (!tbody || !usingLiveBackend || !currentUser || !currentUser.producer_id) return;
+  try {
+    const rows = await apiGet('variety_requests.php?producer_id=' + currentUser.producer_id);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">No requests yet. Click “💡 Request New Variety”.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td><strong>${escHtml(r.variety_name)}</strong><br><span class="text-muted">${escHtml(r.variety_desc)}</span></td>
+      <td>${escHtml(r.crop_name)}</td>
+      <td>${genBadge('G' + r.generation_classification)}</td>
+      <td class="text-muted">${formatDbDate(r.request_date)}</td>
+      <td>${reqStatusBadge[r.status] || escHtml(r.status)}</td>
+      <td style="font-size:12px;max-width:200px;">${r.admin_note ? escHtml(r.admin_note) : '<span class="text-muted">—</span>'}</td>
+      <td>${r.status === 'Pending'
+        ? `<button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="cancelVarietyRequest(${r.request_id})">Cancel</button>`
+        : r.status === 'Approved'
+          ? `<button class="btn btn-primary btn-sm" onclick="openProducerAddStock()">＋ Add Stock</button>`
+          : '<span class="text-muted" style="font-size:11px;">—</span>'}</td>
+    </tr>`).join('');
+  } catch (e) { console.info('Could not load variety requests:', e.message); }
+}
+
+async function cancelVarietyRequest(id) {
+  if (!confirm('Cancel this pending variety request?')) return;
+  try {
+    await apiSend('DELETE', 'variety_requests.php?id=' + id, { acting_producer_id: currentUser ? currentUser.producer_id : undefined });
+    showToast('✅ Request cancelled.');
+    loadProducerRequests();
+  } catch (e) { showToast('⚠️ ' + e.message); }
+}
+
+// ── Admin side ──────────────────────────────────────────────
+async function loadAdminRequests() {
+  const card = document.getElementById('admin-requests-card');
+  const tbody = document.getElementById('admin-requests-tbody');
+  if (!card || !tbody) return;
+  if (!usingLiveBackend) { card.style.display = 'none'; return; }
+  try {
+    const rows = await apiGet('variety_requests.php');
+    card.style.display = 'block';
+    const pending = rows.filter(r => r.status === 'Pending').length;
+    document.getElementById('admin-requests-title').textContent = '📥 Variety Requests — ' + pending + ' pending';
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px;">No variety requests from producers yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td><strong>${escHtml(r.variety_name)}</strong>${r.alt_names ? `<br><span class="text-muted">aka ${escHtml(r.alt_names)}</span>` : ''}</td>
+      <td>${escHtml(r.producer_name)}</td>
+      <td>${escHtml(r.crop_name)}</td>
+      <td>${genBadge('G' + r.generation_classification)}</td>
+      <td style="font-size:12px;max-width:200px;">${escHtml(r.variety_desc)}</td>
+      <td class="text-muted">${formatDbDate(r.request_date)}</td>
+      <td>${reqStatusBadge[r.status] || escHtml(r.status)}${r.status !== 'Pending' && r.admin_note ? `<br><span class="text-muted" style="font-size:10px;">${escHtml(r.admin_note)}</span>` : ''}</td>
+      <td>${r.status === 'Pending'
+        ? `<div class="flex-gap">
+             <button class="btn btn-sm" style="background:rgba(74,124,78,0.12);color:var(--sprout);" onclick="reviewVarietyRequest(${r.request_id},'approve')">✅ Approve</button>
+             <button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="reviewVarietyRequest(${r.request_id},'reject')">Reject</button>
+           </div>`
+        : '<span class="text-muted" style="font-size:11px;">Reviewed</span>'}</td>
+    </tr>`).join('');
+  } catch (e) { card.style.display = 'none'; console.info('Could not load variety requests:', e.message); }
+}
+
+async function reviewVarietyRequest(id, action) {
+  let note = '';
+  if (action === 'reject') {
+    const input = prompt('Reason for rejecting (the producer will see this):');
+    if (input === null) return;
+    note = input.trim();
+    if (!note) { showToast('⚠️ A reason is required to reject a request.'); return; }
+  } else if (!confirm('Approve this request and create the variety in the catalog?')) {
+    return;
+  }
+  try {
+    await apiSend('PUT', 'variety_requests.php?id=' + id, {
+      action, admin_note: note, reviewer_user_id: currentUser ? currentUser.user_id : 0,
+    });
+    showToast(action === 'approve' ? '✅ Variety approved and created.' : '✅ Request rejected.');
+    loadAdminRequests();
+  } catch (e) { showToast('⚠️ ' + e.message); }
 }
 
 // ═══ PRODUCER: MY STOCK (live DB) ═══════════════════════════

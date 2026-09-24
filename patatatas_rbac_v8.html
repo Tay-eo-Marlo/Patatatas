@@ -396,6 +396,14 @@
         <button class="btn btn-primary btn-sm" onclick="openModal('modal-add-seed')">+ Add Variety</button>
       </div>
       <div class="page-body fade-in">
+         <!-- Admin review status for producer request -->
+        <div class="card mb-3" id="admin-requests-card" style="display:none;">
+          <div class="card-header"><span class="card-title" id="admin-requests-title">📥 Variety Requests</span></div>
+          <table class="data-table">
+            <thead><tr><th>Variety</th><th>Producer</th><th>Crop</th><th>Gen</th><th>Description</th><th>Requested</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="admin-requests-tbody"></tbody>
+          </table>
+        </div>
         <div class="section-header">
           <div class="section-title">All Registered Varieties</div>
           <div class="section-sub">Manage all seed varieties across BSU-NPRCRTC and 19 accredited suppliers · Click any card to edit</div>
@@ -830,11 +838,14 @@
         <div class="topbar-search"><span>🔍</span><input placeholder="Search my varieties…"></div>
       </div>
       <div class="page-body fade-in">
-        <div class="alert alert-info">ℹ️ You can update stock quantities for your listed varieties. To <strong>add a new variety</strong>, contact BSU-NPRCRTC Admin for approval.</div>
+        <div class="alert alert-info">ℹ️ You can update stock quantities for your listed varieties. To <strong>add a new variety</strong>, use <strong>Request New Variety</strong>. BSU-NPRCRTC Admin will review it.</div>
         <div class="card">
           <div class="card-header">
             <span class="card-title" id="producer-stock-title">Nelio Compelio Farm — My Varieties (5)</span>
-            <button class="btn btn-primary btn-sm" onclick="openProducerAddStock()">＋ Add Stock Entry</button>
+            <div class="flex-gap">
+              <button class="btn btn-ghost btn-sm" onclick="openVarietyRequest()">💡 Request New Variety</button>
+              <button class="btn btn-primary btn-sm" onclick="openProducerAddStock()">＋ Add Stock Entry</button>
+            </div>
           </div>
           <table class="data-table">
             <thead><tr><th>Seed Variety</th><th>Type</th><th>Gen</th><th>Current Qty</th><th>Price</th><th>Status</th><th>Visibility</th><th>Last Updated</th><th>Actions</th></tr></thead>
@@ -844,6 +855,16 @@
               <tr><td><strong>Cosima B</strong><br><span class="text-muted">Solanum tuberosum</span></td><td>🥔 Potato</td><td>🧬 G2</td><td class="font-mono">290 kg</td><td class="font-mono">₱81.00</td><td><span class="badge badge-available">● Available</span></td><td class="text-muted">Mar 22, 2026</td><td><button class="btn btn-ghost btn-sm" onclick="openProducerUpdateStock('Cosima B','Solanum tuberosum','🥔 Potato',290)">Update Qty</button></td></tr>
               <tr><td><strong>Mexican</strong><br><span class="text-muted">Solanum tuberosum</span></td><td>🥔 Potato</td><td>🧬 G1</td><td class="font-mono">310 kg</td><td class="font-mono">₱76.00</td><td><span class="badge badge-available">● Available</span></td><td class="text-muted">Mar 18, 2026</td><td><button class="btn btn-ghost btn-sm" onclick="openProducerUpdateStock('Mexican','Solanum tuberosum','🥔 Potato',310)">Update Qty</button></td></tr>
               <tr><td><strong>Lakan 1</strong><br><span class="text-muted">Colocasia esculenta</span></td><td>🌿 Taro</td><td>🧬 G0</td><td class="font-mono">580 kg</td><td class="font-mono">₱55.00</td><td><span class="badge badge-available">● Available</span></td><td class="text-muted">Mar 28, 2026</td><td><button class="btn btn-ghost btn-sm" onclick="openProducerUpdateStock('Lakan 1','Colocasia esculenta','🌿 Taro',580)">Update Qty</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card" style="margin-top:20px;">
+        <!-- My Variety Requests" CARD HERE -->
+        <div class="card-header"><span class="card-title">💡 My Variety Requests</span><span class="text-muted text-sm">Reviewed by BSU-NPRCRTC Admin</span></div>
+          <table class="data-table">
+            <thead><tr><th>Variety</th><th>Crop</th><th>Gen</th><th>Requested</th><th>Status</th><th>Admin Note</th><th>Action</th></tr></thead>
+            <tbody id="producer-requests-tbody">
+              <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">Sign in as a producer on the live backend to see your requests.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1520,6 +1541,32 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-producer-add-stock')">Cancel</button>
       <button class="btn btn-primary" onclick="submitProducerAddStock()">Add Entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- Producer: Request New Variety -->
+<div id="modal-variety-request" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header"><span class="modal-title">💡 Request New Variety</span><button class="modal-close" onclick="closeModal('modal-variety-request')">×</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Variety Name</label><input class="form-control" id="vr-name" placeholder="e.g. Igorota"></div>
+        <div class="form-group"><label class="form-label">Crop Type</label><select class="form-control" id="vr-crop"></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Description / Scientific Name</label><input class="form-control" id="vr-desc" placeholder="e.g. Solanum tuberosum"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Seed Generation</label>
+          <select class="form-control" id="vr-gen"><option value="0">G0 — Foundation stock</option><option value="1">G1 — First generation</option><option value="2">G2 — Second generation</option></select></div>
+        <div class="form-group"><label class="form-label">Other Names <span style="font-weight:400;text-transform:none;">(optional)</span></label><input class="form-control" id="vr-alt" placeholder="Comma separated, e.g. LBR, P03"></div>
+      </div>
+      <div style="background:#E3F2FD;border:1.5px solid #90CAF9;border-radius:8px;padding:10px 14px;font-size:11px;color:#1565C0;">
+        ℹ️ Your request goes to the Admin for review. Once approved, the variety is created and you can list your stock for it with <strong>Add Stock Entry</strong>.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-variety-request')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitVarietyRequest()">Submit Request</button>
     </div>
   </div>
 </div>
