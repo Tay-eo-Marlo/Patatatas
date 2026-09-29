@@ -51,6 +51,10 @@
           <span class="role-icon">🌱</span>
           <span class="role-label">Producer</span>
         </div>
+        <div class="role-btn" onclick="selectRole(this,'farmer')" id="role-farmer">
+          <span class="role-icon">👨‍🌾</span>
+          <span class="role-label">Farmer</span>
+        </div>
       </div>
     </div>
 
@@ -60,12 +64,13 @@
 
     <div class="form-group">
       <label class="form-label">Username / Email</label>
-      <input class="form-control" type="text" id="login-email" placeholder="Enter your email" value="admin@bsu.edu.ph">
+      <input class="form-control" type="text" id="login-email" placeholder="Enter your email">
     </div>
     <div class="form-group">
       <label class="form-label">Password</label>
-      <input class="form-control" type="password" placeholder="••••••••" value="password123">
+      <input class="form-control" type="password" id="login-password" placeholder="••••••••">
     </div>
+    <div id="login-error" style="display:none;font-size:12px;color:var(--danger);background:rgba(192,57,43,0.08);border:1px solid rgba(192,57,43,0.25);border-radius:8px;padding:8px 12px;margin-bottom:12px;"></div>
     <div class="flex-between mb-2">
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;">
         <input type="checkbox" checked style="accent-color:var(--harvest);"> Remember me
@@ -82,7 +87,12 @@
     </div>
 
     <div style="text-align:center;margin-top:12px;">
-      <span style="font-size:11px;color:var(--muted);">Not a producer or admin? </span>
+      <span style="font-size:11px;color:var(--muted);">New farmer? </span>
+      <span style="font-size:11px;color:var(--clay);font-weight:700;cursor:pointer;" onclick="goToScreen('screen-farmer-signup')">Create a Farmer account →</span>
+    </div>
+
+    <div style="text-align:center;margin-top:8px;">
+      <span style="font-size:11px;color:var(--muted);">Just browsing? </span>
       <span style="font-size:11px;color:var(--clay);font-weight:700;cursor:pointer;" onclick="goToScreen('screen-public')">Browse public catalog →</span>
     </div>
   </div>
@@ -1806,6 +1816,67 @@
   </div>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════
+     FARMER SIGN-UP SCREEN
+════════════════════════════════════════════════════════════ -->
+<div id="screen-farmer-signup" class="screen">
+  <div style="min-height:100vh;display:flex;flex-direction:row;">
+    <div class="login-left">
+      <div class="login-left-brand">
+        <div class="login-left-icon">🥔</div>
+        <div>
+          <div class="login-left-name">PATATATAS</div>
+          <div class="login-left-sub">BSU-NPRCRTC System</div>
+        </div>
+      </div>
+      <div class="login-hero-title">Join as a<br><em>Farmer</em><br>Buyer</div>
+      <div class="login-hero-desc">
+        Create a Farmer account to browse seed stock, place orders, and keep a record of your purchase history with BSU-NPRCRTC and accredited producers.
+      </div>
+    </div>
+    <div class="login-right">
+      <div class="login-form-title">Create Farmer Account</div>
+      <div class="login-form-sub">Instant activation — no approval needed.</div>
+      <div class="form-row" style="margin-top:16px;">
+        <div class="form-group">
+          <label class="form-label">First Name</label>
+          <input class="form-control" type="text" id="fs-firstname" placeholder="Juan">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name</label>
+          <input class="form-control" type="text" id="fs-lastname" placeholder="dela Cruz">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input class="form-control" type="email" id="fs-email" placeholder="juan@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-control" type="password" id="fs-password" placeholder="Min. 8 characters">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm Password</label>
+        <input class="form-control" type="password" id="fs-confirm-password" placeholder="Re-enter your password">
+      </div>
+      <div id="farmer-signup-error" style="display:none;font-size:12px;color:var(--danger);background:rgba(192,57,43,0.08);border:1px solid rgba(192,57,43,0.25);border-radius:8px;padding:8px 12px;margin-bottom:12px;"></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:13px;" onclick="submitFarmerSignup()">
+        👨‍🌾 Create Account
+      </button>
+      <div style="text-align:center;margin-top:16px;">
+        <span style="font-size:13px;color:var(--muted);">Already have an account? </span>
+        <span style="font-size:13px;color:var(--clay);font-weight:700;cursor:pointer;" onclick="goToScreen('screen-login')">Sign In</span>
+      </div>
+      <div style="text-align:center;margin-top:8px;">
+        <span style="font-size:12px;color:var(--muted);">Just browsing? </span>
+        <span style="font-size:12px;color:var(--clay);font-weight:700;cursor:pointer;" onclick="goToScreen('screen-public')">View public catalog →</span>
+      </div>
+      <div class="demo-note" style="margin-top:20px;">
+        Requires a live database connection. If this file was opened directly with no backend running, account creation won't be available.
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Admin: Edit User Modal -->
 <div id="modal-edit-user" class="modal-overlay">

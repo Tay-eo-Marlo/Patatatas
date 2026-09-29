@@ -103,7 +103,9 @@ async function tryLoadLiveCatalog() {
     for (let i = seeds.length - 1; i >= 0; i--) { if (seeds[i].dbId !== undefined) seeds.splice(i, 1); }
     seeds.unshift(...liveSeeds);
     usingLiveBackend = true;
+    await refreshOrdersFromDb();
     applyAdminFilter(); applyProducerFilter(); applyFarmerFilter(); applyPublicFilter(); renderProducerStock();
+    renderAdminOrders(); renderFarmerOrders();
     showToast('🟢 Connected to live database — ' + liveSeeds.length + ' record(s) loaded from rootcrops.sql.');
   } catch (e) {
     usingLiveBackend = false;
@@ -423,14 +425,42 @@ function applyPublicFilter(){
   renderCatalog(seeds.filter(s=>isVisibleToBuyers(s)&&(publicFilter==='all'||s.type===publicFilter)&&(!q||s.name.toLowerCase().includes(q)||s.scientific.toLowerCase().includes(q))),'publicCatalogGrid','public');
 }
 
+// ═══ REAL ORDER RECORDS (live DB) ═══════════════════════════
+function orderStatusFromDb(o) {
+  return {
+    id: o.order_id, customerName: o.customer_name, customerRole: o.customer_role,
+    contact: o.contact, email: o.email, pickup: o.pickup_location,
+    paymentMethod: o.payment_method, paymentRef: o.payment_ref,
+    items: (o.items || []).map(it => {
+      const seed = seeds.find(s => s.name === it.variety_name);
+      return { name: it.variety_name, qtyNum: Number(it.quantity), price: Number(it.unit_price), emoji: seed ? seed.emoji : '🌱' };
+    }),
+    total: Number(o.total_amount), status: o.status, dateOrdered: formatDbDate(o.date_ordered),
+  };
+}
+async function refreshOrdersFromDb() {
+  if (!usingLiveBackend) return;
+  try { orders = (await apiGet('orders.php')).map(orderStatusFromDb); }
+  catch (e) { console.info('Could not load live orders:', e.message); }
+}
+async function openAdminOrders() {
+  if (usingLiveBackend) await refreshOrdersFromDb();
+  renderAdminOrders();
+}
+async function openFarmerOrders() {
+  let list = null;
+  if (usingLiveBackend && currentUser && currentUser.user_id) {
+    try { list = (await apiGet('orders.php?user_id=' + currentUser.user_id)).map(orderStatusFromDb); }
+    catch (e) { console.info('Could not load your orders:', e.message); }
+  }
+  renderFarmerOrders(list);
+}
+
 // ── ROLE SELECTION (login) ─────────────────────────────────
 const roleHints = {
   admin: '🛡️ <strong>Admin:</strong> Full inventory access — manage all seed stock, varieties, suppliers, users &amp; reports.',
   producer: '🌱 <strong>Producer:</strong> Update stock quantities for your own farm\'s listed varieties.',
-};
-const roleEmails = {
-  admin: 'admin@bsu.edu.ph',
-  producer: 'nelio.compelio@farm.ph',
+  farmer: '👨‍🌾 <strong>Farmer:</strong> Browse seed stock, order crops, and track your own order history.',
 };
 
 function selectRole(el, role) {
@@ -438,41 +468,89 @@ function selectRole(el, role) {
   el.classList.add('selected');
   currentRole = role;
   document.getElementById('role-hint').innerHTML = roleHints[role];
-  document.getElementById('login-email').value = roleEmails[role];
+}
+
+function applyFarmerIdentityToSidebar() {
+  if (!currentUser) return;
+  const initials = (((currentUser.fname||'')[0]||'') + ((currentUser.lname||'')[0]||'')).toUpperCase();
+  const fullName = currentUser.fname + ' ' + currentUser.lname;
+  ['screen-farmer-dashboard','screen-farmer-catalog','screen-farmer-profile','screen-farmer-orders'].forEach(id => {
+    const root = document.getElementById(id);
+    if (!root) return;
+    const av = root.querySelector('.user-avatar'); if (av) av.textContent = initials || '👤';
+    const nm = root.querySelector('.user-name');   if (nm) nm.textContent = fullName;
+  });
 }
 
 async function loginWithRole() {
   const email = document.getElementById('login-email').value.trim();
-  const password = document.querySelector('#screen-login input[type="password"]').value;
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
 
-  // Try a real login against the users table first (only works once a
-  // backend is running and the email/password match a real bcrypt hash —
-  // see README.md for the one seeded producer account + optional test admin).
-  if (usingLiveBackend && email && password) {
-    try {
-      const user = await apiSend('POST', 'auth.php', { email, password });
-      currentUser = user;
-      showToast('✅ Signed in as ' + user.fname + ' ' + user.lname + ' (' + user.role + ') via live database.');
-      if (user.role === 'admin') goToScreen('screen-admin-dashboard');
-      else { goToScreen('screen-producer-dashboard'); applyProducerFilter(); }
-      return;
-    } catch (e) {
-      // Falls through to the demo role-button navigation below so the UI
-      // stays usable even with a wrong/unseeded login during a demo.
-      showToast('ℹ️ No matching database account (' + e.message + ') — continuing in role-demo mode.');
-    }
+  if (!email || !password) {
+    errEl.textContent = 'Please enter your email and password.';
+    errEl.style.display = 'block';
+    return;
   }
 
-  if(currentRole==='admin') goToScreen('screen-admin-dashboard');
-  else if(currentRole==='producer') goToScreen('screen-producer-dashboard');
-  else goToScreen('screen-public');
+  if (!usingLiveBackend) {
+    errEl.textContent = '⚠️ No database connection right now — accounts cannot be verified. Please browse the Public Catalog instead, or try again once the backend is running.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    const user = await apiSend('POST', 'auth.php', { email, password });
+    currentUser = user;
+    document.getElementById('login-password').value = '';
+    applyFarmerIdentityToSidebar();
+    showToast('✅ Signed in as ' + user.fname + ' ' + user.lname + ' (' + user.role + ').');
+    if (user.role === 'admin') {
+      goToScreen('screen-admin-dashboard');
+    } else if (user.role === 'producer') {
+      goToScreen('screen-producer-dashboard'); applyProducerFilter();
+    } else {
+      goToScreen('screen-farmer-dashboard'); applyFarmerFilter();
+    }
+  } catch (e) {
+    errEl.textContent = '❌ No user found. Please check your email and password.';
+    errEl.style.display = 'block';
+    document.getElementById('login-password').value = '';
+  }
+}
+
+async function submitFarmerSignup() {
+  const fn = document.getElementById('fs-firstname').value.trim();
+  const ln = document.getElementById('fs-lastname').value.trim();
+  const email = document.getElementById('fs-email').value.trim();
+  const pw = document.getElementById('fs-password').value;
+  const cpw = document.getElementById('fs-confirm-password').value;
+  const errEl = document.getElementById('farmer-signup-error');
+  errEl.style.display = 'none';
+
+  if (!fn || !ln) { errEl.textContent = 'Please enter your full name.'; errEl.style.display = 'block'; return; }
+  if (!email || !email.includes('@')) { errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return; }
+  if (pw.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; errEl.style.display = 'block'; return; }
+  if (pw !== cpw) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
+  if (!usingLiveBackend) { errEl.textContent = '⚠️ No database connection — account creation requires the live backend.'; errEl.style.display = 'block'; return; }
+
+  try {
+    await apiSend('POST', 'register_farmer.php', { email, fname: fn, lname: ln, password: pw });
+    showToast('✅ Farmer account created! Please sign in.');
+    goToScreen('screen-login');
+    document.getElementById('login-email').value = email;
+  } catch (e) {
+    errEl.textContent = '⚠️ ' + e.message;
+    errEl.style.display = 'block';
+  }
 }
 
 // ── NAVIGATION HELPERS ─────────────────────────────────────
 function adminNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
   goToScreen(screenId);
-  if(screenId==='screen-admin-orders') renderAdminOrders();
+  if(screenId==='screen-admin-orders') openAdminOrders();
   if(screenId==='screen-admin-catalog') loadAdminRequests();
 }
 function producerNav(screenId, el){
@@ -485,7 +563,7 @@ function farmerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
   goToScreen(screenId);
   if(screenId==='screen-farmer-catalog') applyFarmerFilter();
-  if(screenId==='screen-farmer-orders') renderFarmerOrders();
+  if(screenId==='screen-farmer-orders') openFarmerOrders();
 }
 
 // ── SCREEN ROUTING ─────────────────────────────────────────
@@ -1729,7 +1807,7 @@ function openCheckout() {
   openModal('modal-checkout');
 }
 
-function submitCheckout() {
+async function submitCheckout() {
   const name = document.getElementById('checkout-name').value.trim();
   const phone = document.getElementById('checkout-phone').value.trim();
   const email = document.getElementById('checkout-email').value.trim();
@@ -1742,7 +1820,6 @@ function submitCheckout() {
   if (!email || !email.includes('@')) { showToast('⚠️ Please enter a valid email address.'); return; }
   if (paymentMethod !== 'cash' && !paymentRef) { showToast('⚠️ Please enter your payment reference number.'); return; }
 
-  // Re-validate stock at checkout time (per catalog's live availability)
   for (const c of cart) {
     const s = seeds.find(x => x.name === c.name);
     if (!s || s.qtyNum < c.qtyNum) {
@@ -1751,7 +1828,18 @@ function submitCheckout() {
     }
   }
 
-  // Deduct ordered quantities from live stock (auto-unavailable at 0 stays enforced)
+  const isFarmerCheckout = document.getElementById('screen-farmer-dashboard')?.classList.contains('active')
+    || document.getElementById('screen-farmer-catalog')?.classList.contains('active')
+    || document.getElementById('screen-farmer-orders')?.classList.contains('active');
+  const customerRole = isFarmerCheckout ? 'farmer' : 'public';
+
+  if (customerRole === 'farmer' && usingLiveBackend && !currentUser) {
+    showToast('⚠️ Please sign in as a Farmer to place this order.');
+    closeModal('modal-checkout');
+    goToScreen('screen-login');
+    return;
+  }
+
   cart.forEach(c => {
     const s = seeds.find(x => x.name === c.name);
     if (s) {
@@ -1762,24 +1850,39 @@ function submitCheckout() {
     }
   });
 
-  const orderId = 'ORD-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + String(Math.floor(Math.random()*9000)+1000);
-  const order = {
-    id: orderId,
-    customerName: name,
-    customerRole: (document.getElementById('screen-farmer-dashboard')?.classList.contains('active') || document.getElementById('screen-farmer-catalog')?.classList.contains('active') || document.getElementById('screen-farmer-orders')?.classList.contains('active')) ? 'farmer' : 'public',
-    contact: phone,
-    email: email,
-    pickup: pickup,
-    paymentMethod: paymentMethod,
-    paymentRef: paymentMethod === 'cash' ? null : paymentRef,
-    items: cart.map(c => ({ name:c.name, qtyNum:c.qtyNum, price:c.price, emoji:c.emoji })),
-    total: cartTotal(),
-    status: paymentMethod === 'cash' ? 'Pending Payment' : 'Pending Payment',
-    dateOrdered: todayLabel(),
-  };
-  orders.unshift(order);
+  let order;
+  if (usingLiveBackend) {
+    try {
+      const result = await apiSend('POST', 'orders.php', {
+        user_id: currentUser ? currentUser.user_id : null,
+        customer_role: customerRole,
+        customer_name: name, contact: phone, email: email,
+        pickup_location: pickup, payment_method: paymentMethod,
+        payment_ref: paymentMethod === 'cash' ? null : paymentRef,
+        items: cart.map(c => ({ variety_name: c.name, producer_name: c.supplier, quantity: c.qtyNum, unit_price: c.price })),
+      });
+      order = {
+        id: result.order_id, customerName: name, customerRole, contact: phone, email,
+        pickup, paymentMethod, paymentRef: paymentMethod === 'cash' ? null : paymentRef,
+        items: cart.map(c => ({ name: c.name, qtyNum: c.qtyNum, price: c.price, emoji: c.emoji })),
+        total: result.total_amount, status: result.status, dateOrdered: todayLabel(),
+      };
+      await refreshOrdersFromDb();
+    } catch (e) {
+      showToast('⚠️ Could not place order: ' + e.message);
+      return;
+    }
+  } else {
+    const orderId = 'ORD-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + String(Math.floor(Math.random()*9000)+1000);
+    order = {
+      id: orderId, customerName: name, customerRole, contact: phone, email, pickup,
+      paymentMethod, paymentRef: paymentMethod === 'cash' ? null : paymentRef,
+      items: cart.map(c => ({ name:c.name, qtyNum:c.qtyNum, price:c.price, emoji:c.emoji })),
+      total: cartTotal(), status: 'Pending Payment', dateOrdered: todayLabel(),
+    };
+    orders.unshift(order);
+  }
 
-  // Show confirmation
   document.getElementById('confirm-order-id').textContent = order.id;
   document.getElementById('confirm-order-details').innerHTML = order.items.map(i =>
     `<div class="flex-between mb-2"><span style="font-size:13px;">${i.emoji} ${i.name} × ${i.qtyNum} kg</span><span class="font-mono">₱${(i.qtyNum*i.price).toLocaleString()}</span></div>`
@@ -1797,7 +1900,6 @@ function submitCheckout() {
   renderAdminOrders();
   renderFarmerOrders();
 
-  // Reset checkout form
   ['checkout-name','checkout-phone','checkout-email','checkout-payment-ref'].forEach(id => { document.getElementById(id).value = ''; });
 }
 
@@ -1808,10 +1910,10 @@ const orderStatusBadge = {
   'Completed': '<span class="badge badge-available">● Completed</span>',
   'Cancelled': '<span class="badge badge-unavailable">● Cancelled</span>',
 };
-function renderFarmerOrders() {
+function renderFarmerOrders(list) {
   const el = document.getElementById('farmer-orders-list');
   if (!el) return;
-  const myOrders = orders.filter(o => o.customerRole === 'farmer');
+  const myOrders = list || orders.filter(o => o.customerRole === 'farmer');
   if (myOrders.length === 0) {
     el.innerHTML = `<div class="card"><div class="card-body" style="text-align:center;padding:40px 24px;color:var(--muted);">
       <div style="font-size:36px;margin-bottom:10px;">🧾</div>
@@ -1892,10 +1994,9 @@ function renderAdminOrders() {
   }).join('');
 }
 
-function markOrderStatus(orderId, newStatus) {
+async function markOrderStatus(orderId, newStatus) {
   const o = orders.find(x => x.id === orderId);
   if (!o) return;
-  // Cancelling an order that hasn't been fulfilled restores the reserved stock
   if (newStatus === 'Cancelled' && o.status !== 'Cancelled') {
     o.items.forEach(i => {
       const s = seeds.find(x => x.name === i.name);
@@ -1907,6 +2008,10 @@ function markOrderStatus(orderId, newStatus) {
       }
     });
     applyPublicFilter(); applyFarmerFilter(); applyAdminFilter(); applyProducerFilter();
+  }
+  if (usingLiveBackend) {
+    try { await apiSend('PUT', 'orders.php?id=' + orderId, { status: newStatus }); }
+    catch (e) { showToast('⚠️ Could not update order in the database: ' + e.message); return; }
   }
   o.status = newStatus;
   renderAdminOrders();
