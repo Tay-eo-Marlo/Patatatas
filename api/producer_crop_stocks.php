@@ -129,7 +129,7 @@ switch ($method) {
         respond(['producer_crop_stock_id' => $newId], 201);
         break;
 
-    case 'PUT':
+        case 'PUT':
         if (!isset($_GET['id'])) respond(['error' => 'Missing ?id='], 422);
         $d = body();
         requireFields($d, ['action_type', 'quantity', 'user_id', 'user_email', 'update_done_by_fname', 'update_done_by_lname']);
@@ -139,10 +139,19 @@ switch ($method) {
         $stmt->execute([$_GET['id']]);
         $current = $stmt->fetch();
         if (!$current) { $pdo->rollBack(); respond(['error' => 'Stock entry not found'], 404); }
-        if (isset($d['acting_producer_id']) && (int)$d['acting_producer_id'] !== (int)$current['producer_id']) {
-            $pdo->rollBack();
-            respond(['error' => 'You can only modify your own stock entries.'], 403);
+
+        // Producers may only touch their own rows and may not change the supplier.
+        if (isset($d['acting_producer_id'])) {
+            if ((int)$d['acting_producer_id'] !== (int)$current['producer_id']) {
+                $pdo->rollBack();
+                respond(['error' => 'You can only modify your own stock entries.'], 403);
+            }
+            if (isset($d['producer_id']) && (int)$d['producer_id'] !== (int)$current['producer_id']) {
+                $pdo->rollBack();
+                respond(['error' => 'Only an Admin can change the supplier.'], 403);
+            }
         }
+
         $oldQty     = (int)$current['stock_amount'];
         $oldPrice   = (float)$current['unit_price'];
         $oldPublic  = (int)$current['is_public'];
@@ -163,10 +172,28 @@ switch ($method) {
         $newPrice  = isset($d['unit_price']) ? (float)$d['unit_price'] : $oldPrice;
         $newPublic = isset($d['is_public']) ? (int)!!$d['is_public'] : $oldPublic;
 
-        $upd = $pdo->prepare('UPDATE producer_crop_stocks SET stock_amount = ?, unit_price = ?, is_public = ?, last_update_date = NOW() WHERE producer_crop_stock_id = ?');
-        $upd->execute([$newQty, $newPrice, $newPublic, $_GET['id']]);
+        // Optional supplier reassignment (Admin Edit Variety)
+        $newProducerId = (int)$current['producer_id'];
+        $reason = $d['reason_for_change'] ?? '';
+        if (isset($d['producer_id']) && (int)$d['producer_id'] !== $newProducerId) {
+            $p = $pdo->prepare('SELECT producer_name FROM producers WHERE producer_id = ?');
+            $p->execute([$d['producer_id']]);
+            $newProducerName = $p->fetchColumn();
+            if ($newProducerName === false) { $pdo->rollBack(); respond(['error' => 'Selected supplier does not exist.'], 422); }
 
-        // Mirror the exact producer_stock_logs schema/sample data (status stored as 'Public'/'Private').
+            $dup = $pdo->prepare('SELECT 1 FROM producer_crop_stocks WHERE crop_variety_id = ? AND producer_id = ? AND unit_id = ? AND producer_crop_stock_id <> ?');
+            $dup->execute([$current['crop_variety_id'], $d['producer_id'], $current['unit_id'], $_GET['id']]);
+            if ($dup->fetch()) {
+                $pdo->rollBack();
+                respond(['error' => $newProducerName . ' already has a stock entry for this variety and unit.'], 409);
+            }
+            $reason = trim($reason . ' [Supplier changed: ' . $current['producer_name'] . ' -> ' . $newProducerName . ']');
+            $newProducerId = (int)$d['producer_id'];
+        }
+
+        $upd = $pdo->prepare('UPDATE producer_crop_stocks SET stock_amount = ?, unit_price = ?, is_public = ?, producer_id = ?, last_update_date = NOW() WHERE producer_crop_stock_id = ?');
+        $upd->execute([$newQty, $newPrice, $newPublic, $newProducerId, $_GET['id']]);
+
         $log = $pdo->prepare('INSERT INTO producer_stock_logs
             (user_id, user_email, update_done_by_fname, update_done_by_lname, producer_id, producer_name,
              crop, crop_variety, unit_used, old_unit_price, current_unit_price, quantity_action_type,
@@ -177,7 +204,7 @@ switch ($method) {
             $current['producer_id'], $current['producer_name'], $current['crop_name'], $current['variety_name'],
             $current['unit_unabbreviated'], $oldPrice, $newPrice, $d['action_type'],
             $oldQty, $newQty, $oldPublic ? 'Public' : 'Private', $newPublic ? 'Public' : 'Private',
-            $d['reason_for_change'] ?? '',
+            substr($reason, 0, 250),
         ]);
 
         $pdo->commit();
@@ -187,6 +214,7 @@ switch ($method) {
             'old_stock_quantity' => $oldQty, 'current_stock_quantity' => $newQty,
             'old_unit_price' => $oldPrice, 'current_unit_price' => $newPrice,
             'old_status' => $oldPublic ? 'Public' : 'Private', 'current_status' => $newPublic ? 'Public' : 'Private',
+            'producer_id' => $newProducerId,
         ]);
         break;
 

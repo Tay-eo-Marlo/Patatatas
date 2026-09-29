@@ -783,21 +783,68 @@ function submitEditUser() {
 
 
 let _editSeedOriginalName = null;
-function openEditSeed(s) {
-  if(typeof s === 'string') s = JSON.parse(s);
+let _editSeedDbId = null;              // set when the card is backed by a real DB row
+let _editSeedSupplierOptsOrig = null;  // remembers the static demo <option>s
+let _editSeedStatusOptsOrig = null;
+
+async function openEditSeed(s) {
+  if (typeof s === 'string') s = JSON.parse(s);
   _editSeedOriginalName = s.name;
+  _editSeedDbId = s.dbId !== undefined ? s.dbId : null;
+  const isLive = _editSeedDbId !== null && usingLiveBackend;
+
+  const supplierEl = document.getElementById('edit-seed-supplier');
+  const statusEl   = document.getElementById('edit-seed-status');
+  const qtyEl      = document.getElementById('edit-seed-qty');
+  const priceEl    = document.getElementById('edit-seed-price');
+  if (_editSeedSupplierOptsOrig === null) _editSeedSupplierOptsOrig = supplierEl.innerHTML;
+  if (_editSeedStatusOptsOrig === null)   _editSeedStatusOptsOrig   = statusEl.innerHTML;
+
   document.getElementById('edit-seed-name').value = s.name || '';
   document.getElementById('edit-seed-scientific').value = s.scientific || '';
-  document.getElementById('edit-seed-qty').value = s.qtyNum || 0;
-  document.getElementById('edit-seed-supplier').value = s.supplier || 'BSU-NPRCRTC';
-  // Map type key to select value
   const typeMap = {potato:'Potato',sweet:'Sweet Potato',cassava:'Cassava',taro:'Taro',yam:'Yam'};
   document.getElementById('edit-seed-type').value = typeMap[s.type] || 'Potato';
-  document.getElementById('edit-seed-status').value = s.status || 'available';
-  // Parse price number from string like '₱85/kg'
-  const priceNum = s.price ? s.price.replace('₱','').replace('/kg','') : '';
-  document.getElementById('edit-seed-price').value = priceNum;
   document.getElementById('edit-seed-notes').value = '';
+  qtyEl.value = s.qtyNum || 0;
+
+  // Small explanatory note under the status/visibility field (created once)
+  let note = document.getElementById('edit-seed-live-note');
+  if (!note) {
+    note = document.createElement('div');
+    note.id = 'edit-seed-live-note';
+    note.style.cssText = 'font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5;';
+    note.textContent = 'Available / Low / Unavailable is worked out automatically from the quantity. This setting only controls whether buyers can see the listing.';
+    statusEl.parentNode.appendChild(note);
+  }
+
+  if (isLive) {
+    // Real DB row: supplier list comes from `producers`, status = is_public
+    supplierEl.innerHTML = '<option value="' + s.producerId + '">' + escHtml(s.supplier) + '</option>';
+    try {
+      const producers = await apiGet('producers.php');
+      supplierEl.innerHTML = producers.map(p => `<option value="${p.producer_id}">${escHtml(p.producer_name)}</option>`).join('');
+    } catch (e) { showToast('⚠️ Could not load suppliers: ' + e.message); }
+    supplierEl.value = String(s.producerId);
+    statusEl.innerHTML = '<option value="1">Public (visible to buyers)</option><option value="0">Private (hidden)</option>';
+    statusEl.value = s.isPublic ? '1' : '0';
+    priceEl.value = s.priceNum;
+    qtyEl.previousElementSibling.textContent = 'Current Stock (' + s.unitAbbrev + ')';
+    priceEl.previousElementSibling.textContent = 'Price per ' + s.unitAbbrev + ' (₱)';
+    statusEl.previousElementSibling.textContent = 'Visibility';
+    note.style.display = 'block';
+  } else {
+    // Offline demo row: original behaviour
+    supplierEl.innerHTML = _editSeedSupplierOptsOrig;
+    statusEl.innerHTML = _editSeedStatusOptsOrig;
+    supplierEl.value = s.supplier || 'BSU-NPRCRTC';
+    statusEl.value = s.status || 'available';
+    priceEl.value = s.price ? s.price.replace('₱','').replace('/kg','') : '';
+    qtyEl.previousElementSibling.textContent = 'Current Stock (kg)';
+    priceEl.previousElementSibling.textContent = 'Price per kg (₱)';
+    statusEl.previousElementSibling.textContent = 'Stock Status';
+    note.style.display = 'none';
+  }
+
   // Generation / lineage
   const genSel = document.getElementById('edit-seed-generation');
   genSel.value = s.generation || 'G0';
@@ -905,34 +952,76 @@ async function submitEditSeed() {
       return;
     }
   }
-  const s = seeds.find(x => x.name === _editSeedOriginalName);
+  const s = _editSeedDbId !== null
+    ? seeds.find(x => x.dbId === _editSeedDbId)
+    : seeds.find(x => x.name === _editSeedOriginalName);
 
+  const qty   = parseInt(document.getElementById('edit-seed-qty').value, 10);
+  const price = parseFloat(document.getElementById('edit-seed-price').value);
+  if (isNaN(qty) || qty < 0)     { showToast('⚠️ Please enter a valid stock quantity (0 or more).'); return; }
+  if (isNaN(price) || price < 0) { showToast('⚠️ Please enter a valid price.'); return; }
+
+  // ── Live-DB path ───────────────────────────────────────────
   if (s && s.dbId !== undefined && usingLiveBackend) {
     try {
       const varietyName = document.getElementById('edit-seed-name').value.trim();
-      const scientific = document.getElementById('edit-seed-scientific').value.trim();
+      const scientific  = document.getElementById('edit-seed-scientific').value.trim();
+      if (!varietyName) { showToast('⚠️ Please enter a variety name.'); return; }
+
+      const isPublic = document.getElementById('edit-seed-status').value === '1';
+      const newProducerId = Number(document.getElementById('edit-seed-supplier').value);
+      const supplierChanged = !isNaN(newProducerId) && newProducerId !== s.producerId;
+      const notes = document.getElementById('edit-seed-notes').value.trim();
+
+      // 1) variety details (varieties table)
       const cropId = await getOrCreateCropId(document.getElementById('edit-seed-type').value);
       await apiSend('PUT', 'varieties.php?id=' + s.cropVarietyId, { crop_id: cropId, variety_name: varietyName, variety_desc: scientific || varietyName });
+
+      // 2) generation record — only added if that generation doesn't exist yet
       const genNum = gen === 'G0' ? 0 : gen === 'G1' ? 1 : 2;
-      await apiSend('POST', 'variety_generations.php', { variety_id: s.cropVarietyId, generation_classification: genNum, generation_desc: gen + ' record added via Edit Variety' });
+      const hasGen = (s.generations || []).some(g => Number(g.generation_classification) === genNum);
+      if (!hasGen) {
+        await apiSend('POST', 'variety_generations.php', { variety_id: s.cropVarietyId, generation_classification: genNum, generation_desc: gen + ' record added via Edit Variety' });
+      }
+
+      // 3) stock details (producer_crop_stocks + audit row in producer_stock_logs)
+      const stockChanged = qty !== s.qtyNum || price !== s.priceNum || isPublic !== s.isPublic || supplierChanged;
+      if (stockChanged) {
+        const actor = currentUser || { user_id: 0, email: 'demo@patatatas.local', fname: 'Demo', lname: 'User' };
+        await apiSend('PUT', 'producer_crop_stocks.php?id=' + s.dbId, {
+          action_type: 'Exact', quantity: qty, unit_price: price, is_public: isPublic,
+          producer_id: supplierChanged ? newProducerId : undefined,
+          reason_for_change: notes || 'Edited from Admin Edit Variety',
+          user_id: actor.user_id, user_email: actor.email,
+          update_done_by_fname: actor.fname, update_done_by_lname: actor.lname,
+        });
+      }
+
       closeModal('modal-edit-seed');
       showToast('✅ ' + varietyName + ' updated in the database!');
       await tryLoadLiveCatalog();
+      renderProducerStock();
     } catch (e) {
       showToast('⚠️ Could not update the database: ' + e.message);
     }
     return;
   }
 
-  // Offline demo path — unchanged local-only behavior for the demo array.
+  // ── Offline demo path ──────────────────────────────────────
   if (s) {
     s.generation = gen;
     s.parentBatch = gen === 'G0' ? null : document.getElementById('edit-seed-parent').value;
+    s.scientific = document.getElementById('edit-seed-scientific').value.trim() || s.scientific;
+    s.qtyNum = qty;
+    s.qty = qty.toLocaleString() + ' kg';
+    s.price = '₱' + price + '/kg';
+    s.supplier = document.getElementById('edit-seed-supplier').value;
+    s.status = qty === 0 ? 'unavailable' : document.getElementById('edit-seed-status').value;
     s.lastUpdated = todayLabel();
   }
   closeModal('modal-edit-seed');
   showToast('✅ Seed variety updated successfully! (offline demo — start the backend to persist this.)');
-  applyAdminFilter();
+  applyAdminFilter(); applyProducerFilter(); applyFarmerFilter(); applyPublicFilter();
 }
 
 // ── EDIT INVENTORY ENTRY ────────────────────────────────────
@@ -1300,22 +1389,9 @@ async function loadProducerRequests() {
       <td class="text-muted">${formatDbDate(r.request_date)}</td>
       <td>${reqStatusBadge[r.status] || escHtml(r.status)}</td>
       <td style="font-size:12px;max-width:200px;">${r.admin_note ? escHtml(r.admin_note) : '<span class="text-muted">—</span>'}</td>
-      <td>${r.status === 'Pending'
-        ? `<button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="cancelVarietyRequest(${r.request_id})">Cancel</button>`
-        : r.status === 'Approved'
-          ? `<button class="btn btn-primary btn-sm" onclick="openProducerAddStock()">＋ Add Stock</button>`
-          : '<span class="text-muted" style="font-size:11px;">—</span>'}</td>
+      <td class="text-muted">${r.reviewed_date ? formatDbDate(r.reviewed_date) : '<span style="font-size:11px;">Awaiting review</span>'}</td>
     </tr>`).join('');
   } catch (e) { console.info('Could not load variety requests:', e.message); }
-}
-
-async function cancelVarietyRequest(id) {
-  if (!confirm('Cancel this pending variety request?')) return;
-  try {
-    await apiSend('DELETE', 'variety_requests.php?id=' + id, { acting_producer_id: currentUser ? currentUser.producer_id : undefined });
-    showToast('✅ Request cancelled.');
-    loadProducerRequests();
-  } catch (e) { showToast('⚠️ ' + e.message); }
 }
 
 // ── Admin side ──────────────────────────────────────────────

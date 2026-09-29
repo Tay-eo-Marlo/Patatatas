@@ -10,7 +10,8 @@
  * PUT    ?id=5 { action: "approve"|"reject", reviewer_user_id, admin_note }
  *        approve → creates varieties + varieties_alt_names + variety_generations rows
  *        reject  → admin_note is required
- * DELETE ?id=5 { acting_producer_id }  → producer cancels their own PENDING request
+ *
+ * Requests are kept as permanent records: there is no DELETE endpoint.
  */
 require_once __DIR__ . '/../config/db.php';
 
@@ -111,22 +112,6 @@ switch ($method) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             respond(['error' => 'Could not process request: ' . $e->getMessage()], 500);
         }
-        break;
-
-    case 'DELETE':
-        if (!isset($_GET['id'])) respond(['error' => 'Missing ?id='], 422);
-        $d = body();
-        $s = $pdo->prepare('SELECT * FROM variety_requests WHERE request_id = ?');
-        $s->execute([$_GET['id']]);
-        $req = $s->fetch();
-        if (!$req) respond(['error' => 'Request not found'], 404);
-        if (isset($d['acting_producer_id']) && (int)$d['acting_producer_id'] !== (int)$req['producer_id']) {
-            respond(['error' => 'You can only cancel your own requests.'], 403);
-        }
-        if ($req['status'] !== 'Pending') respond(['error' => 'Only pending requests can be cancelled.'], 409);
-        $del = $pdo->prepare('DELETE FROM variety_requests WHERE request_id = ?');
-        $del->execute([$_GET['id']]);
-        respond(['deleted' => $del->rowCount() > 0]);
         break;
 
     default:
