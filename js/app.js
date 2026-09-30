@@ -528,6 +528,19 @@ async function loginWithRole() {
 
   try {
     const user = await apiSend('POST', 'auth.php', { email, password });
+
+    // The credentials are valid, but they must belong to the role the
+    // person selected on this screen (Admin / Producer / Farmer). If the
+    // account's real role doesn't match the selected one, treat it the
+    // same as an unknown account rather than logging them in under a
+    // different role than the one they picked.
+    if (user.role !== currentRole) {
+      errEl.textContent = '❌ No user found. Please check your email and password.';
+      errEl.style.display = 'block';
+      document.getElementById('login-password').value = '';
+      return;
+    }
+
     currentUser = user;
     document.getElementById('login-password').value = '';
     applyIdentityToSidebar(user.role);
