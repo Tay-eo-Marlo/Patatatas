@@ -1056,6 +1056,29 @@
         </div>
         <div class="two-col mb-3">
           <div class="card">
+            <div class="card-header"><span class="card-title">👤 My Account</span></div>
+            <div class="card-body">
+              <div class="form-group"><label class="form-label">Full Name</label>
+                <div class="form-row"><input class="form-control" id="admin-profile-fname" placeholder="First name"><input class="form-control" id="admin-profile-lname" placeholder="Last name"></div></div>
+              <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" id="admin-profile-email"></div>
+              <div class="form-group"><label class="form-label">Contact Number</label><input class="form-control" id="admin-profile-phone"></div>
+              <div class="form-group"><label class="form-label">Location</label><input class="form-control" id="admin-profile-location"></div>
+              <button class="btn btn-primary" onclick="submitAdminProfile()">Save Changes</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">🔐 Change Password</span></div>
+            <div class="card-body">
+              <div class="form-group"><label class="form-label">Current Password</label><input class="form-control" type="password" id="admin-pw-current"></div>
+              <div class="form-group"><label class="form-label">New Password</label><input class="form-control" type="password" id="admin-pw-new" placeholder="Min. 8 characters" oninput="checkAdminPwMatch()"></div>
+              <div class="form-group"><label class="form-label">Confirm New Password</label><input class="form-control" type="password" id="admin-pw-confirm" oninput="checkAdminPwMatch()"></div>
+              <div id="admin-pw-match-msg" style="font-size:11px;margin-bottom:12px;display:none;"></div>
+              <button class="btn btn-primary" onclick="saveAdminPassword()">Update Password</button>
+            </div>
+          </div>
+        </div>
+        <div class="two-col mb-3">
+          <div class="card">
             <div class="card-header"><span class="card-title">Currently Available</span><button class="btn btn-ghost btn-sm" onclick="farmerNav('screen-farmer-catalog',null)">See All →</button></div>
             <div class="card-body" style="padding:0;">
               <table class="data-table">
