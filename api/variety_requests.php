@@ -1,20 +1,5 @@
 <?php
-/**
- * api/variety_requests.php — producer "Request New Variety" workflow.
- *
- * GET    ?producer_id=1        → that producer's requests
- * GET    ?status=Pending       → filter by status (admin review queue)
- * GET                          → all requests (Pending first)
- * POST   { producer_id, requested_by_user_id, crop_id, variety_name, variety_desc,
- *          generation_classification (0|1|2), alt_names (comma separated, optional) }
- * PUT    ?id=5 { action: "approve"|"reject", reviewer_user_id, admin_note }
- *        approve → creates varieties + varieties_alt_names + variety_generations rows
- *        reject  → admin_note is required
- *
- * Requests are kept as permanent records: there is no DELETE endpoint.
- */
 require_once __DIR__ . '/../config/db.php';
-
 $method = $_SERVER['REQUEST_METHOD'];
 $pdo = db();
 
@@ -27,6 +12,12 @@ const REQ_SELECT = "
 
 switch ($method) {
     case 'GET':
+        if (isset($_GET['id'])) {
+            $stmt = $pdo->prepare(REQ_SELECT . ' WHERE vr.request_id = ?');
+            $stmt->execute([$_GET['id']]);
+            $row = $stmt->fetch();
+            $row ? respond($row) : respond(['error' => 'Request not found'], 404);
+        }
         $where = []; $params = [];
         if (isset($_GET['producer_id'])) { $where[] = 'vr.producer_id = ?'; $params[] = $_GET['producer_id']; }
         if (isset($_GET['status']))      { $where[] = 'vr.status = ?';      $params[] = $_GET['status']; }
@@ -53,10 +44,14 @@ switch ($method) {
         if ($pend->fetch()) respond(['error' => 'A pending request for "' . $name . '" already exists.'], 409);
 
         $ins = $pdo->prepare('INSERT INTO variety_requests
-            (producer_id, requested_by_user_id, crop_id, variety_name, variety_desc, generation_classification, alt_names)
-            VALUES (?, ?, ?, ?, ?, ?, ?)');
-        $ins->execute([$d['producer_id'], $d['requested_by_user_id'], $d['crop_id'], $name,
-                       trim($d['variety_desc']), $gen, trim($d['alt_names'] ?? '')]);
+            (producer_id, requested_by_user_id, crop_id, variety_name, variety_desc, generation_classification,
+             alt_names, requested_unit_size, requested_unit_abbreviated, requested_unit_unabbreviated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $ins->execute([
+            $d['producer_id'], $d['requested_by_user_id'], $d['crop_id'], $name, trim($d['variety_desc']), $gen,
+            trim($d['alt_names'] ?? ''), trim($d['requested_unit_size'] ?? ''),
+            trim($d['requested_unit_abbreviated'] ?? ''), trim($d['requested_unit_unabbreviated'] ?? ''),
+        ]);
         respond(['request_id' => (int)$pdo->lastInsertId(), 'status' => 'Pending'], 201);
         break;
 
@@ -81,33 +76,48 @@ switch ($method) {
                 $pdo->commit();
                 respond(['status' => 'Rejected']);
             }
-
             if ($d['action'] !== 'approve') { $pdo->rollBack(); respond(['error' => 'action must be approve or reject'], 422); }
 
-            // Re-check duplicate at approval time (another admin/producer may have added it meanwhile)
+            // Admin can adjust these before finalizing the variety.
+            $cropId   = isset($d['crop_id']) ? (int)$d['crop_id'] : (int)$req['crop_id'];
+            $name     = isset($d['variety_name']) ? trim($d['variety_name']) : $req['variety_name'];
+            $desc     = isset($d['variety_desc']) ? trim($d['variety_desc']) : $req['variety_desc'];
+            $genNum   = isset($d['generation_classification']) ? (int)$d['generation_classification'] : (int)$req['generation_classification'];
+            $unitSize   = trim($d['unit_size'] ?? $req['requested_unit_size']);
+            $unitAbbr   = trim($d['unit_abbreviated'] ?? $req['requested_unit_abbreviated']);
+            $unitFull   = trim($d['unit_unabbreviated'] ?? $req['requested_unit_unabbreviated']);
+            if ($unitAbbr === '' || $unitFull === '') { $pdo->rollBack(); respond(['error' => 'A unit type (abbreviated + full name) is required to approve.'], 422); }
+
             $dup = $pdo->prepare('SELECT 1 FROM varieties WHERE crop_id = ? AND LOWER(variety_name) = LOWER(?)');
-            $dup->execute([$req['crop_id'], $req['variety_name']]);
+            $dup->execute([$cropId, $name]);
             if ($dup->fetch()) { $pdo->rollBack(); respond(['error' => 'A variety with this name already exists. Reject this request instead.'], 409); }
 
+            // Find-or-create the unit for this crop.
+            $uf = $pdo->prepare('SELECT unit_id FROM rootcrop_units WHERE crop_id = ? AND LOWER(unit_abbreviated) = LOWER(?)');
+            $uf->execute([$cropId, $unitAbbr]);
+            $unitId = $uf->fetchColumn();
+            if ($unitId === false) {
+                $uc = $pdo->prepare('INSERT INTO rootcrop_units (crop_id, unit_size, unit_abbreviated, unit_unabbreviated) VALUES (?, ?, ?, ?)');
+                $uc->execute([$cropId, $unitSize ?: $unitAbbr, $unitAbbr, $unitFull]);
+                $unitId = (int)$pdo->lastInsertId();
+            }
+
             $v = $pdo->prepare('INSERT INTO varieties (crop_id, variety_name, variety_desc) VALUES (?, ?, ?)');
-            $v->execute([$req['crop_id'], $req['variety_name'], $req['variety_desc']]);
+            $v->execute([$cropId, $name, $desc]);
             $varietyId = (int)$pdo->lastInsertId();
 
             if ($req['alt_names'] !== '') {
                 $alt = $pdo->prepare('INSERT INTO varieties_alt_names (variety_id, alt_name) VALUES (?, ?)');
-                foreach (explode(',', $req['alt_names']) as $a) {
-                    if (trim($a) !== '') $alt->execute([$varietyId, trim($a)]);
-                }
+                foreach (explode(',', $req['alt_names']) as $a) { if (trim($a) !== '') $alt->execute([$varietyId, trim($a)]); }
             }
 
             $g = $pdo->prepare('INSERT INTO variety_generations (variety_id, generation_classification, generation_desc) VALUES (?, ?, ?)');
-            $g->execute([$varietyId, $req['generation_classification'],
-                         'G' . $req['generation_classification'] . ' record created from approved producer request #' . $req['request_id']]);
+            $g->execute([$varietyId, $genNum, 'G' . $genNum . ' record created from approved producer request #' . $req['request_id']]);
 
-            $u = $pdo->prepare("UPDATE variety_requests SET status='Approved', admin_note=?, created_variety_id=?, reviewed_by_user_id=?, reviewed_date=NOW() WHERE request_id=?");
-            $u->execute([$note, $varietyId, $d['reviewer_user_id'], $_GET['id']]);
+            $u = $pdo->prepare("UPDATE variety_requests SET status='Approved', admin_note=?, created_variety_id=?, created_unit_id=?, reviewed_by_user_id=?, reviewed_date=NOW() WHERE request_id=?");
+            $u->execute([$note, $varietyId, $unitId, $d['reviewer_user_id'], $_GET['id']]);
             $pdo->commit();
-            respond(['status' => 'Approved', 'variety_id' => $varietyId]);
+            respond(['status' => 'Approved', 'variety_id' => $varietyId, 'unit_id' => $unitId]);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             respond(['error' => 'Could not process request: ' . $e->getMessage()], 500);

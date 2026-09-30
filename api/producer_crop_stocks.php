@@ -129,7 +129,7 @@ switch ($method) {
         respond(['producer_crop_stock_id' => $newId], 201);
         break;
 
-        case 'PUT':
+    case 'PUT':
         if (!isset($_GET['id'])) respond(['error' => 'Missing ?id='], 422);
         $d = body();
         requireFields($d, ['action_type', 'quantity', 'user_id', 'user_email', 'update_done_by_fname', 'update_done_by_lname']);
@@ -140,59 +140,59 @@ switch ($method) {
         $current = $stmt->fetch();
         if (!$current) { $pdo->rollBack(); respond(['error' => 'Stock entry not found'], 404); }
 
-        // Producers may only touch their own rows and may not change the supplier.
         if (isset($d['acting_producer_id'])) {
             if ((int)$d['acting_producer_id'] !== (int)$current['producer_id']) {
-                $pdo->rollBack();
-                respond(['error' => 'You can only modify your own stock entries.'], 403);
+                $pdo->rollBack(); respond(['error' => 'You can only modify your own stock entries.'], 403);
             }
             if (isset($d['producer_id']) && (int)$d['producer_id'] !== (int)$current['producer_id']) {
-                $pdo->rollBack();
-                respond(['error' => 'Only an Admin can change the supplier.'], 403);
+                $pdo->rollBack(); respond(['error' => 'Only an Admin can change the supplier.'], 403);
+            }
+            if (isset($d['unit_id']) && (int)$d['unit_id'] !== (int)$current['unit_id']) {
+                $pdo->rollBack(); respond(['error' => 'Only an Admin can change the unit type.'], 403);
             }
         }
 
-        $oldQty     = (int)$current['stock_amount'];
-        $oldPrice   = (float)$current['unit_price'];
-        $oldPublic  = (int)$current['is_public'];
-
+        $oldQty = (int)$current['stock_amount']; $oldPrice = (float)$current['unit_price']; $oldPublic = (int)$current['is_public'];
         $qty = (float)$d['quantity'];
         switch ($d['action_type']) {
-            case 'Exact':      $newQty = (int)round($qty); break;
-            case 'Added':      $newQty = $oldQty + (int)round($qty); break;
+            case 'Exact': $newQty = (int)round($qty); break;
+            case 'Added': $newQty = $oldQty + (int)round($qty); break;
             case 'Subtracted':
                 $newQty = $oldQty - (int)round($qty);
                 if ($newQty < 0) { $pdo->rollBack(); respond(['error' => 'Cannot subtract more than current stock (' . $oldQty . ')'], 422); }
                 break;
-            default:
-                $pdo->rollBack();
-                respond(['error' => 'action_type must be Exact, Added, or Subtracted'], 422);
+            default: $pdo->rollBack(); respond(['error' => 'action_type must be Exact, Added, or Subtracted'], 422);
         }
-
         $newPrice  = isset($d['unit_price']) ? (float)$d['unit_price'] : $oldPrice;
         $newPublic = isset($d['is_public']) ? (int)!!$d['is_public'] : $oldPublic;
 
-        // Optional supplier reassignment (Admin Edit Variety)
-        $newProducerId = (int)$current['producer_id'];
         $reason = $d['reason_for_change'] ?? '';
+        $newProducerId = (int)$current['producer_id'];
         if (isset($d['producer_id']) && (int)$d['producer_id'] !== $newProducerId) {
             $p = $pdo->prepare('SELECT producer_name FROM producers WHERE producer_id = ?');
             $p->execute([$d['producer_id']]);
             $newProducerName = $p->fetchColumn();
             if ($newProducerName === false) { $pdo->rollBack(); respond(['error' => 'Selected supplier does not exist.'], 422); }
-
-            $dup = $pdo->prepare('SELECT 1 FROM producer_crop_stocks WHERE crop_variety_id = ? AND producer_id = ? AND unit_id = ? AND producer_crop_stock_id <> ?');
-            $dup->execute([$current['crop_variety_id'], $d['producer_id'], $current['unit_id'], $_GET['id']]);
-            if ($dup->fetch()) {
-                $pdo->rollBack();
-                respond(['error' => $newProducerName . ' already has a stock entry for this variety and unit.'], 409);
-            }
-            $reason = trim($reason . ' [Supplier changed: ' . $current['producer_name'] . ' -> ' . $newProducerName . ']');
+            $reason = trim($reason . ' [Supplier: ' . $current['producer_name'] . ' -> ' . $newProducerName . ']');
             $newProducerId = (int)$d['producer_id'];
         }
 
-        $upd = $pdo->prepare('UPDATE producer_crop_stocks SET stock_amount = ?, unit_price = ?, is_public = ?, producer_id = ?, last_update_date = NOW() WHERE producer_crop_stock_id = ?');
-        $upd->execute([$newQty, $newPrice, $newPublic, $newProducerId, $_GET['id']]);
+        $newUnitId = (int)$current['unit_id'];
+        if (isset($d['unit_id']) && (int)$d['unit_id'] !== $newUnitId) {
+            $uCheck = $pdo->prepare('SELECT unit_abbreviated FROM rootcrop_units WHERE unit_id = ? AND crop_id = (SELECT crop_id FROM varieties WHERE variety_id = ?)');
+            $uCheck->execute([$d['unit_id'], $current['crop_variety_id']]);
+            $newUnitAbbr = $uCheck->fetchColumn();
+            if ($newUnitAbbr === false) { $pdo->rollBack(); respond(['error' => 'Selected unit does not belong to this crop.'], 422); }
+            $reason = trim($reason . ' [Unit: ' . $current['unit_abbreviated'] . ' -> ' . $newUnitAbbr . ']');
+            $newUnitId = (int)$d['unit_id'];
+        }
+
+        $dupCheck = $pdo->prepare('SELECT 1 FROM producer_crop_stocks WHERE crop_variety_id=? AND producer_id=? AND unit_id=? AND producer_crop_stock_id<>?');
+        $dupCheck->execute([$current['crop_variety_id'], $newProducerId, $newUnitId, $_GET['id']]);
+        if ($dupCheck->fetch()) { $pdo->rollBack(); respond(['error' => 'A stock entry with this producer + unit combination already exists.'], 409); }
+
+        $upd = $pdo->prepare('UPDATE producer_crop_stocks SET stock_amount=?, unit_price=?, is_public=?, producer_id=?, unit_id=?, last_update_date=NOW() WHERE producer_crop_stock_id=?');
+        $upd->execute([$newQty, $newPrice, $newPublic, $newProducerId, $newUnitId, $_GET['id']]);
 
         $log = $pdo->prepare('INSERT INTO producer_stock_logs
             (user_id, user_email, update_done_by_fname, update_done_by_lname, producer_id, producer_name,
@@ -208,14 +208,10 @@ switch ($method) {
         ]);
 
         $pdo->commit();
-        respond([
-            'updated' => true,
-            'producer_crop_stock_id' => (int)$_GET['id'],
+        respond(['updated' => true, 'producer_crop_stock_id' => (int)$_GET['id'],
             'old_stock_quantity' => $oldQty, 'current_stock_quantity' => $newQty,
             'old_unit_price' => $oldPrice, 'current_unit_price' => $newPrice,
-            'old_status' => $oldPublic ? 'Public' : 'Private', 'current_status' => $newPublic ? 'Public' : 'Private',
-            'producer_id' => $newProducerId,
-        ]);
+            'old_status' => $oldPublic ? 'Public' : 'Private', 'current_status' => $newPublic ? 'Public' : 'Private']);
         break;
 
     case 'DELETE':

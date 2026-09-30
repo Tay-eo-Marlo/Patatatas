@@ -15,6 +15,32 @@ const API_BASE = 'api/';
 let usingLiveBackend = false;
 let currentUser = null; // set by real login via api/auth.php: {user_id, email, fname, lname, role, producer_id, producer_name}
 
+function toTitleCase(str) {
+  return String(str || '').toLowerCase().replace(/(^|[\s-])\S/g, c => c.toUpperCase());
+}
+function fullNameOf(u) { return u ? toTitleCase(u.fname) + ' ' + toTitleCase(u.lname) : ''; }
+
+function applyIdentityToSidebar(role) {
+  if (!currentUser) return;
+  const screensByRole = {
+    admin:    ['screen-admin-dashboard','screen-admin-catalog','screen-admin-inventory','screen-admin-orders','screen-admin-suppliers','screen-admin-reports','screen-admin-users','screen-admin-settings'],
+    producer: ['screen-producer-dashboard','screen-producer-inventory','screen-producer-catalog','screen-producer-profile'],
+    farmer:   ['screen-farmer-dashboard','screen-farmer-catalog','screen-farmer-profile','screen-farmer-orders'],
+  };
+  const initials = ((toTitleCase(currentUser.fname)[0]||'') + (toTitleCase(currentUser.lname)[0]||'')).toUpperCase();
+  const fullName = fullNameOf(currentUser);
+  const subLine  = role === 'producer' ? (currentUser.producer_name || currentUser.location || '')
+                 : role === 'farmer'   ? (currentUser.location || '')
+                 : 'BSU-NPRCRTC Admin';
+  (screensByRole[role] || []).forEach(id => {
+    const root = document.getElementById(id);
+    if (!root) return;
+    const av = root.querySelector('.user-avatar'); if (av) av.textContent = initials || '👤';
+    const nm = root.querySelector('.user-name');   if (nm) nm.textContent = fullName;
+    const rl = root.querySelector('.user-role');   if (rl) rl.textContent = subLine;
+  });
+}
+
 async function apiGet(path) {
   const res = await fetch(API_BASE + path);
   if (!res.ok) throw new Error('API GET ' + path + ' failed: ' + res.status);
@@ -504,8 +530,8 @@ async function loginWithRole() {
     const user = await apiSend('POST', 'auth.php', { email, password });
     currentUser = user;
     document.getElementById('login-password').value = '';
-    applyFarmerIdentityToSidebar();
-    showToast('✅ Signed in as ' + user.fname + ' ' + user.lname + ' (' + user.role + ').');
+    applyIdentityToSidebar(user.role);
+    showToast('✅ Signed in as ' + fullNameOf(user) + ' (' + user.role + ').');
     if (user.role === 'admin') {
       goToScreen('screen-admin-dashboard');
     } else if (user.role === 'producer') {
@@ -529,14 +555,18 @@ async function submitFarmerSignup() {
   const errEl = document.getElementById('farmer-signup-error');
   errEl.style.display = 'none';
 
+  const phone = document.getElementById('fs-phone').value.trim();
+  const location = document.getElementById('fs-location').value.trim();
   if (!fn || !ln) { errEl.textContent = 'Please enter your full name.'; errEl.style.display = 'block'; return; }
   if (!email || !email.includes('@')) { errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return; }
+  if (!phone) { errEl.textContent = 'Please enter a contact number.'; errEl.style.display = 'block'; return; }
+  if (!location) { errEl.textContent = 'Please enter your municipality/location.'; errEl.style.display = 'block'; return; }
   if (pw.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; errEl.style.display = 'block'; return; }
   if (pw !== cpw) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
   if (!usingLiveBackend) { errEl.textContent = '⚠️ No database connection — account creation requires the live backend.'; errEl.style.display = 'block'; return; }
 
   try {
-    await apiSend('POST', 'register_farmer.php', { email, fname: fn, lname: ln, password: pw });
+    await apiSend('POST', 'register_farmer.php', { email, fname: fn, lname: ln, phone, location, password: pw });
     showToast('✅ Farmer account created! Please sign in.');
     goToScreen('screen-login');
     document.getElementById('login-email').value = email;
@@ -552,18 +582,21 @@ function adminNav(screenId, el){
   goToScreen(screenId);
   if(screenId==='screen-admin-orders') openAdminOrders();
   if(screenId==='screen-admin-catalog') loadAdminRequests();
+  if(screenId==='screen-admin-settings') populateAdminProfile();
 }
 function producerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
   goToScreen(screenId);
   if(screenId==='screen-producer-catalog') applyProducerFilter();
   if(screenId==='screen-producer-inventory'){ renderProducerStock(); loadProducerRequests(); }
+  if(screenId==='screen-producer-profile') populateProducerProfile();
 }
 function farmerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
   goToScreen(screenId);
   if(screenId==='screen-farmer-catalog') applyFarmerFilter();
   if(screenId==='screen-farmer-orders') openFarmerOrders();
+  if(screenId==='screen-farmer-profile') populateFarmerProfile();
 }
 
 // ── SCREEN ROUTING ─────────────────────────────────────────
@@ -775,19 +808,7 @@ function checkProdPwMatch() {
   if(nw === cf) { msg.innerHTML = '✅ Passwords match'; msg.style.color = 'var(--success)'; }
   else { msg.innerHTML = '❌ Passwords do not match'; msg.style.color = 'var(--danger)'; }
 }
-function saveProdPassword() {
-  const cur = document.getElementById('prod-pw-current')?.value || '';
-  const nw = document.getElementById('prod-pw-new')?.value || '';
-  const cf = document.getElementById('prod-pw-confirm')?.value || '';
-  if(!cur) { showToast('Please enter your current password.'); return; }
-  if(nw.length < 8) { showToast('New password must be at least 8 characters.'); return; }
-  if(nw !== cf) { showToast('New passwords do not match.'); return; }
-  document.getElementById('prod-pw-current').value = '';
-  document.getElementById('prod-pw-new').value = '';
-  document.getElementById('prod-pw-confirm').value = '';
-  document.getElementById('prod-pw-match-msg').style.display = 'none';
-  showToast('🔐 Password updated successfully!');
-}
+function saveProdPassword() { changePassword('prod-pw-current','prod-pw-new','prod-pw-confirm','prod-pw-match-msg'); }
 
 // ── FARMER PASSWORD ─────────────────────────────────────────
 function checkFarmerPwMatch() {
@@ -800,19 +821,8 @@ function checkFarmerPwMatch() {
   if(nw === cf) { msg.innerHTML = '✅ Passwords match'; msg.style.color = 'var(--success)'; }
   else { msg.innerHTML = '❌ Passwords do not match'; msg.style.color = 'var(--danger)'; }
 }
-function saveFarmerPassword() {
-  const cur = document.getElementById('farmer-pw-current')?.value || '';
-  const nw = document.getElementById('farmer-pw-new')?.value || '';
-  const cf = document.getElementById('farmer-pw-confirm')?.value || '';
-  if(!cur) { showToast('Please enter your current password.'); return; }
-  if(nw.length < 8) { showToast('New password must be at least 8 characters.'); return; }
-  if(nw !== cf) { showToast('New passwords do not match.'); return; }
-  document.getElementById('farmer-pw-current').value = '';
-  document.getElementById('farmer-pw-new').value = '';
-  document.getElementById('farmer-pw-confirm').value = '';
-  document.getElementById('farmer-pw-match-msg').style.display = 'none';
-  showToast('🔐 Password updated successfully!');
-}
+
+function saveFarmerPassword() { changePassword('farmer-pw-current','farmer-pw-new','farmer-pw-confirm','farmer-pw-match-msg'); }
 
 
 
@@ -906,6 +916,16 @@ async function openEditSeed(s) {
     statusEl.innerHTML = '<option value="1">Public (visible to buyers)</option><option value="0">Private (hidden)</option>';
     statusEl.value = s.isPublic ? '1' : '0';
     priceEl.value = s.priceNum;
+    const unitSel = document.getElementById('edit-seed-unit');
+    try {
+      const v = await apiGet('varieties.php?id=' + s.cropVarietyId);
+      const units = await apiGet('rootcrop_units.php?crop_id=' + v.crop_id);
+      unitSel.innerHTML = units.map(u => `<option value="${u.unit_id}">${escHtml(u.unit_unabbreviated)} (${escHtml(u.unit_abbreviated)})</option>`).join('')
+        + '<option value="__new__">+ Add a new unit type…</option>';
+      unitSel.value = String(s.unitId);
+    } catch (e) { showToast('⚠️ Could not load units: ' + e.message); }
+    toggleEditSeedNewUnit();
+    document.getElementById('edit-seed-unit-wrap-label') ; // no-op, placeholder
     qtyEl.previousElementSibling.textContent = 'Current Stock (' + s.unitAbbrev + ')';
     priceEl.previousElementSibling.textContent = 'Price per ' + s.unitAbbrev + ' (₱)';
     statusEl.previousElementSibling.textContent = 'Visibility';
@@ -1008,7 +1028,15 @@ async function submitAddSeed() {
     const genNum = gen === 'G0' ? 0 : gen === 'G1' ? 1 : 2;
     await apiSend('POST', 'variety_generations.php', { variety_id: variety.variety_id, generation_classification: genNum, generation_desc: gen + ' record added via Admin Catalog UI' });
     const producerId = await getOrCreateProducerId(supplier || 'BSU-NPRCRTC');
-    const unitId = await getOrCreateUnitId(cropId);
+    let unitId = document.getElementById('add-seed-unit').value;
+    if (unitId === '__new__') {
+      const unitSize = document.getElementById('add-seed-unit-size').value.trim();
+      const unitAbbrev = document.getElementById('add-seed-unit-abbrev').value.trim();
+      const unitFull = document.getElementById('add-seed-unit-full').value.trim();
+      if (!unitAbbrev || !unitFull) { showToast('⚠️ Please fill in the unit abbreviation and full name.'); return; }
+      const created = await apiSend('POST', 'rootcrop_units.php', { crop_id: cropId, unit_size: unitSize || unitAbbrev, unit_abbreviated: unitAbbrev, unit_unabbreviated: unitFull });
+      unitId = created.unit_id;
+    }
     await apiSend('POST', 'producer_crop_stocks.php', {
       crop_variety_id: variety.variety_id, producer_id: producerId, unit_id: unitId,
       stock_amount: Number(initialStock) || 0, unit_price: Number(price) || 0, is_public: 1,
@@ -1497,6 +1525,7 @@ async function loadAdminRequests() {
       <td>${reqStatusBadge[r.status] || escHtml(r.status)}${r.status !== 'Pending' && r.admin_note ? `<br><span class="text-muted" style="font-size:10px;">${escHtml(r.admin_note)}</span>` : ''}</td>
       <td>${r.status === 'Pending'
         ? `<div class="flex-gap">
+        
              <button class="btn btn-sm" style="background:rgba(74,124,78,0.12);color:var(--sprout);" onclick="reviewVarietyRequest(${r.request_id},'approve')">✅ Approve</button>
              <button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="reviewVarietyRequest(${r.request_id},'reject')">Reject</button>
            </div>`
@@ -1505,20 +1534,74 @@ async function loadAdminRequests() {
   } catch (e) { card.style.display = 'none'; console.info('Could not load variety requests:', e.message); }
 }
 
-async function reviewVarietyRequest(id, action) {
-  let note = '';
-  if (action === 'reject') {
-    const input = prompt('Reason for rejecting (the producer will see this):');
-    if (input === null) return;
-    note = input.trim();
-    if (!note) { showToast('⚠️ A reason is required to reject a request.'); return; }
-  } else if (!confirm('Approve this request and create the variety in the catalog?')) {
-    return;
-  }
+// ── Admin side ──────────────────────────────────────────────
+async function loadAdminRequests() {
+  const card = document.getElementById('admin-requests-card');
+  const tbody = document.getElementById('admin-requests-tbody');
+  if (!card || !tbody) return;
+  if (!usingLiveBackend) { card.style.display = 'none'; return; }
   try {
-    await apiSend('PUT', 'variety_requests.php?id=' + id, {
-      action, admin_note: note, reviewer_user_id: currentUser ? currentUser.user_id : 0,
-    });
+    const rows = await apiGet('variety_requests.php');
+    card.style.display = 'block';
+    const pending = rows.filter(r => r.status === 'Pending').length;
+    document.getElementById('admin-requests-title').textContent = '📥 Variety Requests — ' + pending + ' pending';
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px;">No variety requests from producers yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td><strong>${escHtml(r.variety_name)}</strong>${r.alt_names ? `<br><span class="text-muted">aka ${escHtml(r.alt_names)}</span>` : ''}</td>
+      <td>${escHtml(r.producer_name)}</td>
+      <td>${escHtml(r.crop_name)}</td>
+      <td>${genBadge('G' + r.generation_classification)}</td>
+      <td style="font-size:12px;max-width:200px;">${escHtml(r.variety_desc)}</td>
+      <td class="text-muted">${formatDbDate(r.request_date)}</td>
+      <td>${reqStatusBadge[r.status] || escHtml(r.status)}${r.status !== 'Pending' && r.admin_note ? `<br><span class="text-muted" style="font-size:10px;">${escHtml(r.admin_note)}</span>` : ''}</td>
+      <td>${r.status === 'Pending'
+        ? `<div class="flex-gap">
+        
+             <button class="btn btn-sm" style="background:rgba(74,124,78,0.12);color:var(--sprout);" onclick="reviewVarietyRequest(${r.request_id},'approve')">✅ Approve</button>
+             <button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="reviewVarietyRequest(${r.request_id},'reject')">Reject</button>
+           </div>`
+        : '<span class="text-muted" style="font-size:11px;">Reviewed</span>'}</td>
+    </tr>`).join('');
+  } catch (e) { card.style.display = 'none'; console.info('Could not load variety requests:', e.message); }
+}
+
+let _reviewRequestId = null;
+async function openReviewRequest(id) {
+  try {
+    const r = await apiGet('variety_requests.php?id=' + id);
+    _reviewRequestId = id;
+    document.getElementById('rr-producer').textContent = r.producer_name;
+    document.getElementById('rr-name').value = r.variety_name;
+    document.getElementById('rr-desc').value = r.variety_desc;
+    document.getElementById('rr-gen').value = r.generation_classification;
+    document.getElementById('rr-unit-size').value = r.requested_unit_size;
+    document.getElementById('rr-unit-abbrev').value = r.requested_unit_abbreviated;
+    document.getElementById('rr-unit-full').value = r.requested_unit_unabbreviated;
+    document.getElementById('rr-note').value = '';
+    const crops = await apiGet('rootcrops.php');
+    document.getElementById('rr-crop').innerHTML = crops.map(c => `<option value="${c.crop_id}" ${c.crop_id===r.crop_id?'selected':''}>${escHtml(c.crop_name)}</option>`).join('');
+    openModal('modal-review-request');
+  } catch (e) { showToast('⚠️ Could not load request: ' + e.message); }
+}
+async function submitReviewRequest(action) {
+  const note = document.getElementById('rr-note').value.trim();
+  if (action === 'reject' && !note) { showToast('⚠️ A reason is required to reject.'); return; }
+  const payload = {
+    action, admin_note: note, reviewer_user_id: currentUser ? currentUser.user_id : 0,
+    variety_name: document.getElementById('rr-name').value.trim(),
+    variety_desc: document.getElementById('rr-desc').value.trim(),
+    crop_id: Number(document.getElementById('rr-crop').value),
+    generation_classification: Number(document.getElementById('rr-gen').value),
+    unit_size: document.getElementById('rr-unit-size').value.trim(),
+    unit_abbreviated: document.getElementById('rr-unit-abbrev').value.trim(),
+    unit_unabbreviated: document.getElementById('rr-unit-full').value.trim(),
+  };
+  try {
+    await apiSend('PUT', 'variety_requests.php?id=' + _reviewRequestId, payload);
+    closeModal('modal-review-request');
     showToast(action === 'approve' ? '✅ Variety approved and created.' : '✅ Request rejected.');
     loadAdminRequests();
   } catch (e) { showToast('⚠️ ' + e.message); }
@@ -2018,6 +2101,91 @@ async function markOrderStatus(orderId, newStatus) {
   renderFarmerOrders();
   showToast('✅ Order ' + orderId + ' marked as ' + newStatus + '.');
 }
+
+// ═══ PROFILE: name / email / phone / location + password ═══
+function fillProfileForm(prefix) {
+  if (!currentUser) return;
+  document.getElementById(prefix + '-fname').value = toTitleCase(currentUser.fname);
+  document.getElementById(prefix + '-lname').value = toTitleCase(currentUser.lname);
+  document.getElementById(prefix + '-email').value = currentUser.email || '';
+  document.getElementById(prefix + '-phone').value = currentUser.phone || '';
+  document.getElementById(prefix + '-location').value = currentUser.location || '';
+}
+function populateAdminProfile() { fillProfileForm('admin-profile'); }
+function populateProducerProfile() { fillProfileForm('prod-profile'); }
+function populateFarmerProfile() { fillProfileForm('farmer-profile'); }
+
+async function saveProfile(prefix, role) {
+  if (!currentUser) { showToast('⚠️ Please sign in first.'); return; }
+  const fname = document.getElementById(prefix + '-fname').value.trim();
+  const lname = document.getElementById(prefix + '-lname').value.trim();
+  const email = document.getElementById(prefix + '-email').value.trim();
+  const phone = document.getElementById(prefix + '-phone').value.trim();
+  const location = document.getElementById(prefix + '-location').value.trim();
+  if (!fname || !lname) { showToast('⚠️ Please enter your full name.'); return; }
+  if (!email || !email.includes('@')) { showToast('⚠️ Please enter a valid email address.'); return; }
+  try {
+    await apiSend('PUT', 'users.php?id=' + currentUser.user_id, { fname, lname, email, phone, location });
+    currentUser.fname = fname; currentUser.lname = lname; currentUser.email = email;
+    currentUser.phone = phone; currentUser.location = location;
+    applyIdentityToSidebar(role);
+    showToast('✅ Profile updated successfully!');
+  } catch (e) { showToast('⚠️ ' + e.message); }
+}
+function submitAdminProfile()    { saveProfile('admin-profile', 'admin'); }
+function submitProdProfile()     { saveProfile('prod-profile', 'producer'); }
+function submitFarmerProfile()   { saveProfile('farmer-profile', 'farmer'); }
+
+async function changePassword(currentId, newId, confirmId, msgId) {
+  if (!currentUser) { showToast('⚠️ Please sign in first.'); return; }
+  const cur = document.getElementById(currentId).value;
+  const nw  = document.getElementById(newId).value;
+  const cf  = document.getElementById(confirmId).value;
+  if (!cur) { showToast('Please enter your current password.'); return; }
+  if (nw.length < 8) { showToast('New password must be at least 8 characters.'); return; }
+  if (nw !== cf) { showToast('New passwords do not match.'); return; }
+  try {
+    await apiSend('POST', 'change_password.php', { user_id: currentUser.user_id, current_password: cur, new_password: nw });
+    [currentId, newId, confirmId].forEach(id => document.getElementById(id).value = '');
+    const msg = document.getElementById(msgId); if (msg) msg.style.display = 'none';
+    showToast('🔐 Password updated successfully!');
+  } catch (e) { showToast('⚠️ ' + e.message); }
+}
+function checkAdminPwMatch() {
+  const nw = document.getElementById('admin-pw-new')?.value || '';
+  const cf = document.getElementById('admin-pw-confirm')?.value || '';
+  const msg = document.getElementById('admin-pw-match-msg');
+  if (!msg) return;
+  if (!nw && !cf) { msg.style.display = 'none'; return; }
+  msg.style.display = 'block';
+  if (nw === cf) { msg.innerHTML = '✅ Passwords match'; msg.style.color = 'var(--success)'; }
+  else { msg.innerHTML = '❌ Passwords do not match'; msg.style.color = 'var(--danger)'; }
+}
+function saveAdminPassword() { changePassword('admin-pw-current','admin-pw-new','admin-pw-confirm','admin-pw-match-msg'); }
+
+async function loadAddSeedUnits() {
+  const cropName = document.querySelector('#modal-add-seed select').value;
+  const unitSel = document.getElementById('add-seed-unit');
+  try {
+    const crops = await apiGet('rootcrops.php');
+    const crop = crops.find(c => c.crop_name.toLowerCase() === cropName.toLowerCase());
+    if (!crop) { unitSel.innerHTML = '<option value="__new__">+ Add a new unit type…</option>'; toggleAddSeedNewUnit(); return; }
+    const units = await apiGet('rootcrop_units.php?crop_id=' + crop.crop_id);
+    unitSel.innerHTML = units.map(u => `<option value="${u.unit_id}">${escHtml(u.unit_unabbreviated)} (${escHtml(u.unit_abbreviated)})</option>`).join('')
+      + '<option value="__new__">+ Add a new unit type…</option>';
+    toggleAddSeedNewUnit();
+  } catch (e) { console.info('Could not load units:', e.message); }
+}
+function toggleAddSeedNewUnit() {
+  const wrap = document.getElementById('add-seed-new-unit-wrap');
+  wrap.style.display = document.getElementById('add-seed-unit').value === '__new__' ? 'block' : 'none';
+}
+
+function toggleEditSeedNewUnit() {
+  const wrap = document.getElementById('edit-seed-new-unit-wrap');
+  wrap.style.display = document.getElementById('edit-seed-unit').value === '__new__' ? 'block' : 'none';
+}
+document.getElementById('add-seed-unit')?.addEventListener('change', toggleAddSeedNewUnit);
 
 // ── INIT ─────────────────────────────────────────────────
 applyAdminFilter();

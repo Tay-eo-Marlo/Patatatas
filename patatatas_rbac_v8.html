@@ -685,6 +685,29 @@
       <div class="rbac-banner admin">🛡️ Administrator — Configure system-wide settings and inventory thresholds</div>
       <div class="topbar"><div class="topbar-title">System Settings</div></div>
       <div class="page-body fade-in">
+        <div class="two-col mb-3">
+          <div class="card">
+            <div class="card-header"><span class="card-title">👤 My Account</span></div>
+            <div class="card-body">
+              <div class="form-group"><label class="form-label">Full Name</label>
+                <div class="form-row"><input class="form-control" id="admin-profile-fname" placeholder="First name"><input class="form-control" id="admin-profile-lname" placeholder="Last name"></div></div>
+              <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" id="admin-profile-email"></div>
+              <div class="form-group"><label class="form-label">Contact Number</label><input class="form-control" id="admin-profile-phone"></div>
+              <div class="form-group"><label class="form-label">Location</label><input class="form-control" id="admin-profile-location"></div>
+              <button class="btn btn-primary" onclick="submitAdminProfile()">Save Changes</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">🔐 Change Password</span></div>
+            <div class="card-body">
+              <div class="form-group"><label class="form-label">Current Password</label><input class="form-control" type="password" id="admin-pw-current"></div>
+              <div class="form-group"><label class="form-label">New Password</label><input class="form-control" type="password" id="admin-pw-new" placeholder="Min. 8 characters" oninput="checkAdminPwMatch()"></div>
+              <div class="form-group"><label class="form-label">Confirm New Password</label><input class="form-control" type="password" id="admin-pw-confirm" oninput="checkAdminPwMatch()"></div>
+              <div id="admin-pw-match-msg" style="font-size:11px;margin-bottom:12px;display:none;"></div>
+              <button class="btn btn-primary" onclick="saveAdminPassword()">Update Password</button>
+            </div>
+          </div>
+        </div>
         <div class="two-col">
           <div class="card">
             <div class="card-header"><span class="card-title">Inventory Thresholds</span></div>
@@ -950,11 +973,12 @@
           <div class="card">
             <div class="card-header"><span class="card-title">👤 Contact Information</span></div>
             <div class="card-body">
-              <div class="form-group"><label class="form-label">Full Name</label><input class="form-control" value="Nelio Compelio"></div>
-              <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" value="nelio.compelio@farm.ph"></div>
-              <div class="form-group"><label class="form-label">Phone / Mobile</label><input class="form-control" value="+63 916 123 4567"></div>
-              <div class="form-group"><label class="form-label">Address</label><input class="form-control" value="Kabayan, Benguet"></div>
-              <button class="btn btn-primary" onclick="showToast('Contact info saved successfully!')">Save Changes</button>
+              <div class="form-group"><label class="form-label">Full Name</label>
+                <div class="form-row"><input class="form-control" id="prod-profile-fname" placeholder="First name"><input class="form-control" id="prod-profile-lname" placeholder="Last name"></div></div>
+              <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" id="prod-profile-email"></div>
+              <div class="form-group"><label class="form-label">Phone / Mobile</label><input class="form-control" id="prod-profile-phone"></div>
+              <div class="form-group"><label class="form-label">Address</label><input class="form-control" id="prod-profile-location"></div>
+              <button class="btn btn-primary" onclick="submitProdProfile()">Save Changes</button>
             </div>
           </div>
           <div class="card">
@@ -1188,11 +1212,12 @@
           <div class="card">
             <div class="card-header"><span class="card-title">👤 My Contact Information</span></div>
             <div class="card-body">
-              <div class="form-group"><label class="form-label">Full Name</label><input class="form-control" value="Jose Compelio"></div>
-              <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" value="jose.compelio@farmer.ph"></div>
-              <div class="form-group"><label class="form-label">Phone / Mobile</label><input class="form-control" value="+63 912 345 6789"></div>
-              <div class="form-group"><label class="form-label">Municipality / Barangay</label><input class="form-control" value="Kabayan, Benguet"></div>
-              <button class="btn btn-primary" onclick="showToast('Profile saved successfully!')">Save Changes</button>
+              <div class="form-group"><label class="form-label">Full Name</label>
+                <div class="form-row"><input class="form-control" id="farmer-profile-fname" placeholder="First name"><input class="form-control" id="farmer-profile-lname" placeholder="Last name"></div></div>
+              <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" id="farmer-profile-email"></div>
+              <div class="form-group"><label class="form-label">Phone / Mobile</label><input class="form-control" id="farmer-profile-phone"></div>
+              <div class="form-group"><label class="form-label">Municipality / Barangay</label><input class="form-control" id="farmer-profile-location"></div>
+              <button class="btn btn-primary" onclick="submitFarmerProfile()">Save Changes</button>
             </div>
           </div>
           <div class="card">
@@ -1380,7 +1405,7 @@
     <div class="modal-body">
       <div class="form-row">
         <div class="form-group"><label class="form-label">Variety Name</label><input class="form-control" placeholder="e.g. Igorota"></div>
-        <div class="form-group"><label class="form-label">Crop Type</label><select class="form-control"><option>Potato</option><option>Sweet Potato</option><option>Cassava</option><option>Taro</option><option>Yam</option></select></div>
+        <div class="form-group"><label class="form-label">Crop Type</label><select class="form-control" onchange="loadAddSeedUnits()"><option>Potato</option><option>Sweet Potato</option><option>Cassava</option><option>Taro</option><option>Yam</option></select></div>
       </div>
       <div class="form-group"><label class="form-label">Scientific Name</label><input class="form-control" placeholder="e.g. Solanum tuberosum"></div>
       <div class="form-row">
@@ -1593,6 +1618,11 @@
           <select class="form-control" id="vr-gen"><option value="0">G0 — Foundation stock</option><option value="1">G1 — First generation</option><option value="2">G2 — Second generation</option></select></div>
         <div class="form-group"><label class="form-label">Other Names <span style="font-weight:400;text-transform:none;">(optional)</span></label><input class="form-control" id="vr-alt" placeholder="Comma separated, e.g. LBR, P03"></div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Intended Unit Label</label><input class="form-control" id="vr-unit-size" placeholder="e.g. Cutting"></div>
+        <div class="form-group"><label class="form-label">Abbreviated</label><input class="form-control" id="vr-unit-abbrev" placeholder="e.g. Cutting"></div>
+      </div>
+<div class="form-group"><label class="form-label">Full Unit Name</label><input class="form-control" id="vr-unit-full" placeholder="e.g. Rooted Cuttings"></div>
       <div style="background:#E3F2FD;border:1.5px solid #90CAF9;border-radius:8px;padding:10px 14px;font-size:11px;color:#1565C0;">
         ℹ️ Your request goes to the Admin for review. Once approved, the variety is created and you can list your stock for it with <strong>Add Stock Entry</strong>.
       </div>
@@ -1600,6 +1630,33 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-variety-request')">Cancel</button>
       <button class="btn btn-primary" onclick="submitVarietyRequest()">Submit Request</button>
+    </div>
+  </div>
+</div>
+
+<!-- review request -->
+<div id="modal-review-request" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header"><span class="modal-title">📋 Review Variety Request</span><button class="modal-close" onclick="closeModal('modal-review-request')">×</button></div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Requested by <strong id="rr-producer">—</strong></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Variety Name</label><input class="form-control" id="rr-name"></div>
+        <div class="form-group"><label class="form-label">Crop Type</label><select class="form-control" id="rr-crop"></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Description</label><input class="form-control" id="rr-desc"></div>
+      <div class="form-group"><label class="form-label">Generation</label>
+        <select class="form-control" id="rr-gen"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option></select></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Unit Label</label><input class="form-control" id="rr-unit-size"></div>
+        <div class="form-group"><label class="form-label">Abbreviated</label><input class="form-control" id="rr-unit-abbrev"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Full Unit Name</label><input class="form-control" id="rr-unit-full"></div>
+      <div class="form-group"><label class="form-label">Admin Note <span style="font-weight:400;text-transform:none;">(required to reject)</span></label><textarea class="form-control" id="rr-note" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="submitReviewRequest('reject')">Reject</button>
+      <button class="btn btn-primary" onclick="submitReviewRequest('approve')">✅ Approve & Create Variety</button>
     </div>
   </div>
 </div>
@@ -1875,6 +1932,14 @@
         <input class="form-control" type="email" id="fs-email" placeholder="juan@example.com">
       </div>
       <div class="form-group">
+        <label class="form-label">Contact Number</label>
+        <input class="form-control" type="tel" id="fs-phone" placeholder="+63 9XX XXX XXXX">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Municipality / Barangay</label>
+        <input class="form-control" type="text" id="fs-location" placeholder="e.g. La Trinidad, Benguet">
+      </div>
+      <div class="form-group">
         <label class="form-label">Password</label>
         <input class="form-control" type="password" id="fs-password" placeholder="Min. 8 characters">
       </div>
@@ -1995,14 +2060,7 @@
           <input class="form-control" id="edit-seed-name" placeholder="e.g. Igorota">
         </div>
         <div class="form-group">
-          <label class="form-label">Crop Type</label>
-          <select class="form-control" id="edit-seed-type">
-            <option value="Potato">Potato</option>
-            <option value="Sweet Potato">Sweet Potato</option>
-            <option value="Cassava">Cassava</option>
-            <option value="Taro">Taro</option>
-            <option value="Yam">Yam</option>
-          </select>
+          <div class="form-group"><label class="form-label">Crop Type</label><select class="form-control" onchange="loadAddSeedUnits()"><option>Potato</option><option>Sweet Potato</option><option>Cassava</option><option>Taro</option><option>Yam</option></select></div>
         </div>
       </div>
       <div class="form-group">
@@ -2037,6 +2095,17 @@
             <option value="low">Low Stock</option>
             <option value="unavailable">Unavailable</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Unit Type</label>
+          <select class="form-control" id="add-seed-unit" onchange="toggleAddSeedNewUnit()"><option value="__new__">+ Add a new unit type…</option></select>
+        </div>
+        <div id="add-seed-new-unit-wrap">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Unit Label</label><input class="form-control" id="add-seed-unit-size" placeholder="e.g. Cutting"></div>
+            <div class="form-group"><label class="form-label">Abbreviated</label><input class="form-control" id="add-seed-unit-abbrev" placeholder="e.g. Cutting"></div>
+          </div>
+          <div class="form-group"><label class="form-label">Full Unit Name</label><input class="form-control" id="add-seed-unit-full" placeholder="e.g. Rooted Cuttings"></div>
         </div>
       </div>
       <div style="border-top:1px solid var(--parchment);margin:16px 0;"></div>
@@ -2339,3 +2408,4 @@
 <script src="js/app.js"></script>
 </body>
 </html>
+

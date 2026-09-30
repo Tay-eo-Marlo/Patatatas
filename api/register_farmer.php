@@ -1,21 +1,9 @@
 <?php
-/**
- * api/register_farmer.php — self-service Farmer account creation.
- * Farmers get an instant active account (no admin approval step, unlike
- * Producers, who need BPI accreditation reviewed first).
- *
- * POST { email, fname, lname, password }
- *   → 201 { user_id, email, fname, lname, role: "farmer" }
- *   → 409 if the email is already registered
- */
 require_once __DIR__ . '/../config/db.php';
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    respond(['error' => 'Method not allowed'], 405);
-}
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') respond(['error' => 'Method not allowed'], 405);
 
 $d = body();
-requireFields($d, ['email', 'fname', 'lname', 'password']);
+requireFields($d, ['email', 'fname', 'lname', 'phone', 'location', 'password']);
 if (strlen($d['password']) < 8) respond(['error' => 'Password must be at least 8 characters.'], 422);
 
 $pdo = db();
@@ -31,6 +19,8 @@ try {
     $userId = (int)$pdo->lastInsertId();
     $a = $pdo->prepare('INSERT INTO user_auth_level (user_id, auth_level) VALUES (?, 2)');
     $a->execute([$userId]);
+    $p = $pdo->prepare('INSERT INTO user_profiles (user_id, phone, location) VALUES (?, ?, ?)');
+    $p->execute([$userId, trim($d['phone']), trim($d['location'])]);
     $pdo->commit();
     respond(['user_id' => $userId, 'email' => $d['email'], 'fname' => $d['fname'], 'lname' => $d['lname'], 'role' => 'farmer'], 201);
 } catch (Throwable $e) {
