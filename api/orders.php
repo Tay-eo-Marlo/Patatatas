@@ -26,6 +26,28 @@ switch ($method) {
             $order['items'] = $i->fetchAll();
             respond($order);
         }
+        if (isset($_GET['producer_name'])) {
+            $pn = $_GET['producer_name'];
+            $q = $pdo->prepare('SELECT DISTINCT o.* FROM orders o
+                                JOIN order_items oi ON oi.order_id = o.order_id
+                                WHERE oi.producer_name = ? ORDER BY o.date_ordered DESC');
+            $q->execute([$pn]);
+            $rows = $q->fetchAll();
+            if ($rows) {
+                $ids = array_column($rows, 'order_id');
+                $in  = implode(',', array_fill(0, count($ids), '?'));
+                $it  = $pdo->prepare("SELECT * FROM order_items WHERE order_id IN ($in) AND producer_name = ?");
+                $it->execute(array_merge($ids, [$pn]));
+                $by = [];
+                foreach ($it->fetchAll() as $r) { $by[$r['order_id']][] = $r; }
+                foreach ($rows as $k => $r) {
+                    $rows[$k]['items'] = $by[$r['order_id']] ?? [];
+                    $rows[$k]['my_subtotal'] = array_sum(array_map(fn($i) => $i['quantity'] * $i['unit_price'], $rows[$k]['items']));
+                    unset($rows[$k]['payment_ref']);   // producers don't need payment details
+                }
+            }
+            respond($rows);
+        }
         $where = []; $params = [];
         if (isset($_GET['user_id'])) { $where[] = 'user_id = ?'; $params[] = $_GET['user_id']; }
         if (isset($_GET['status']))  { $where[] = 'status = ?';  $params[] = $_GET['status']; }
@@ -47,7 +69,11 @@ switch ($method) {
 
     case 'POST':
         $d = body();
-        requireFields($d, ['customer_role', 'customer_name', 'contact', 'email', 'pickup_location', 'payment_method', 'items']);
+        requireFields($d, ['user_id', 'customer_role', 'customer_name', 'contact', 'email', 'pickup_location', 'payment_method', 'items']);
+        $chk = $pdo->prepare('SELECT 1 FROM user_auth_level WHERE user_id = ? AND auth_level = 2');
+        $chk->execute([$d['user_id']]);
+        if (!$chk->fetch()) respond(['error' => 'Only a signed-in Farmer account can place orders.'], 403);
+        $d['customer_role'] = 'farmer';
         if (!is_array($d['items']) || !count($d['items'])) respond(['error' => 'Order must contain at least one item.'], 422);
         if ($d['payment_method'] !== 'cash' && empty($d['payment_ref'])) respond(['error' => 'Payment reference is required for non-cash payments.'], 422);
 

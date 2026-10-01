@@ -24,7 +24,7 @@ function applyIdentityToSidebar(role) {
   if (!currentUser) return;
   const screensByRole = {
     admin:    ['screen-admin-dashboard','screen-admin-catalog','screen-admin-inventory','screen-admin-orders','screen-admin-suppliers','screen-admin-reports','screen-admin-users','screen-admin-settings'],
-    producer: ['screen-producer-dashboard','screen-producer-inventory','screen-producer-catalog','screen-producer-profile'],
+    producer: ['screen-producer-dashboard','screen-producer-inventory','screen-producer-catalog','screen-producer-orders','screen-producer-profile'],
     farmer:   ['screen-farmer-dashboard','screen-farmer-catalog','screen-farmer-profile','screen-farmer-orders'],
   };
   const initials = ((toTitleCase(currentUser.fname)[0]||'') + (toTitleCase(currentUser.lname)[0]||'')).toUpperCase();
@@ -551,6 +551,11 @@ async function loginWithRole() {
       goToScreen('screen-producer-dashboard'); applyProducerFilter();
     } else {
       goToScreen('screen-farmer-dashboard'); applyFarmerFilter();
+      if (pendingCartSeed) {
+        const n = pendingCartSeed; pendingCartSeed = null;
+        goToScreen('screen-farmer-catalog');
+        addToCart(n);
+      }
     }
   } catch (e) {
     errEl.textContent = '❌ No user found. Please check your email and password.';
@@ -582,6 +587,7 @@ async function submitFarmerSignup() {
     await apiSend('POST', 'register_farmer.php', { email, fname: fn, lname: ln, phone, location, password: pw });
     showToast('✅ Farmer account created! Please sign in.');
     goToScreen('screen-login');
+    selectRole(document.getElementById('role-farmer'), 'farmer');
     document.getElementById('login-email').value = email;
   } catch (e) {
     errEl.textContent = '⚠️ ' + e.message;
@@ -596,6 +602,7 @@ function adminNav(screenId, el){
   if(screenId==='screen-admin-orders') openAdminOrders();
   if(screenId==='screen-admin-catalog') loadAdminRequests();
   if(screenId==='screen-admin-settings') populateAdminProfile();
+  if(screenId==='screen-admin-suppliers') loadProducerApplications();
 }
 function producerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
@@ -603,6 +610,7 @@ function producerNav(screenId, el){
   if(screenId==='screen-producer-catalog') applyProducerFilter();
   if(screenId==='screen-producer-inventory'){ renderProducerStock(); loadProducerRequests(); }
   if(screenId==='screen-producer-profile') populateProducerProfile();
+  if(screenId==='screen-producer-orders') openProducerOrders();
 }
 function farmerNav(screenId, el){
   if(el){ document.querySelectorAll('#'+screenId+' .nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
@@ -614,6 +622,9 @@ function farmerNav(screenId, el){
 
 // ── SCREEN ROUTING ─────────────────────────────────────────
 function goToScreen(id) {
+  if (id === 'screen-login' && currentUser) {
+    currentUser = null; cart = []; pendingCartSeed = null; updateCartBadges();
+  }
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const t = document.getElementById(id);
   if(t){ t.classList.add('active'); window.scrollTo(0,0); }
@@ -679,7 +690,7 @@ function checkCaPwStrength() {
   lbl.textContent = c.label;
   lbl.style.color = c.bg;
 }
-function submitCreateAccount() {
+async function submitCreateAccount() {
   var fn = document.getElementById('ca-firstname').value.trim();
   var ln = document.getElementById('ca-lastname').value.trim();
   var em = document.getElementById('ca-email').value.trim();
@@ -697,8 +708,12 @@ function submitCreateAccount() {
   if (pw.length < 8) { showToast('Password must be at least 8 characters.'); return; }
   if (pw !== cpw) { showToast('Passwords do not match.'); return; }
   if (!terms) { showToast('Please agree to the Terms & Conditions.'); return; }
-  document.getElementById('ca-form-view').style.display = 'none';
-  document.getElementById('ca-success-view').style.display = 'block';
+  if (!usingLiveBackend) { showToast('⚠️ No database connection — applications require the live backend.'); return; }
+  try {
+    await apiSend('POST', 'producer_applications.php', { fname: fn, lname: ln, email: em, phone: ph, location: loc, farm_name: farm, password: pw });
+    document.getElementById('ca-form-view').style.display = 'none';
+    document.getElementById('ca-success-view').style.display = 'block';
+  } catch (e) { showToast('⚠️ ' + e.message); }
 }
 
 
@@ -784,31 +799,31 @@ function openSupplierStock(name, location, contact, accred, statusText, varietie
   openModal('modal-supplier-stock');
 }
 
-// ── SUPPLIER APPROVAL (Admin Approval Requirement business rule) ───────────
-// New / under-review suppliers stay "Pending" and cannot post inventory to the
-// public/farmer catalogs until an Admin manually verifies and activates them.
-function approveSupplier(btnEl, name) {
-  const row = btnEl.closest('tr');
-  const statusCell = row.querySelector('td:nth-child(6)');
-  statusCell.innerHTML = '<span class="badge badge-available">● Active</span>';
-  const actionsCell = row.querySelector('td:last-child .flex-gap');
-  actionsCell.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="showToast('ℹ️ ${name} stock viewer requires backend integration in this demo.')">📦 View Stock</button><button class="btn btn-sm" style="background:rgba(243,156,18,0.1);color:var(--warning)" onclick="showToast('Supplier suspended. Their stock will be hidden from farmers.')">Suspend</button>`;
-  showToast('✅ ' + name + ' approved & activated — can now post inventory to the catalog.');
-}
-function rejectSupplier(btnEl, name) {
-  const row = btnEl.closest('tr');
-  row.style.opacity = '0.4';
-  const actionsCell = row.querySelector('td:last-child .flex-gap');
-  actionsCell.innerHTML = '<span class="text-muted" style="font-size:11px;">Application rejected</span>';
-  showToast('❌ ' + name + ' application rejected. Account will not be activated.');
-}
-function submitRegisterSupplier() {
-  const verifyNow = document.getElementById('add-supplier-verify-now').checked;
-  closeModal('modal-add-supplier');
-  showToast(verifyNow
-    ? '✅ Supplier registered & activated as Active — can post inventory immediately.'
-    : 'ℹ️ Supplier registered as Pending. Approve from Supplier Management before they can post inventory.');
-}
+// // ── SUPPLIER APPROVAL (Admin Approval Requirement business rule) ───────────
+// // New / under-review suppliers stay "Pending" and cannot post inventory to the
+// // public/farmer catalogs until an Admin manually verifies and activates them.
+// function approveSupplier(btnEl, name) {
+//   const row = btnEl.closest('tr');
+//   const statusCell = row.querySelector('td:nth-child(6)');
+//   statusCell.innerHTML = '<span class="badge badge-available">● Active</span>';
+//   const actionsCell = row.querySelector('td:last-child .flex-gap');
+//   actionsCell.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="showToast('ℹ️ ${name} stock viewer requires backend integration in this demo.')">📦 View Stock</button><button class="btn btn-sm" style="background:rgba(243,156,18,0.1);color:var(--warning)" onclick="showToast('Supplier suspended. Their stock will be hidden from farmers.')">Suspend</button>`;
+//   showToast('✅ ' + name + ' approved & activated — can now post inventory to the catalog.');
+// }
+// function rejectSupplier(btnEl, name) {
+//   const row = btnEl.closest('tr');
+//   row.style.opacity = '0.4';
+//   const actionsCell = row.querySelector('td:last-child .flex-gap');
+//   actionsCell.innerHTML = '<span class="text-muted" style="font-size:11px;">Application rejected</span>';
+//   showToast('❌ ' + name + ' application rejected. Account will not be activated.');
+// }
+// function submitRegisterSupplier() {
+//   const verifyNow = document.getElementById('add-supplier-verify-now').checked;
+//   closeModal('modal-add-supplier');
+//   showToast(verifyNow
+//     ? '✅ Supplier registered & activated as Active — can post inventory immediately.'
+//     : 'ℹ️ Supplier registered as Pending. Approve from Supplier Management before they can post inventory.');
+// }
 
 // ── PRODUCER PASSWORD ───────────────────────────────────────
 function checkProdPwMatch() {
@@ -837,7 +852,53 @@ function checkFarmerPwMatch() {
 
 function saveFarmerPassword() { changePassword('farmer-pw-current','farmer-pw-new','farmer-pw-confirm','farmer-pw-match-msg'); }
 
+// ═══ ADMIN: PRODUCER APPLICATIONS ═══
+async function loadProducerApplications() {
+  const card = document.getElementById('admin-applications-card');
+  const tbody = document.getElementById('admin-applications-tbody');
+  if (!card || !tbody) return;
+  if (!usingLiveBackend) { card.style.display = 'none'; return; }
+  try {
+    const rows = await apiGet('producer_applications.php');
+    card.style.display = 'block';
+    const pending = rows.filter(r => r.status === 'Pending').length;
+    document.getElementById('admin-applications-title').textContent = '📥 Producer Applications — ' + pending + ' pending';
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">No producer applications yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td><strong>${escHtml(r.fname)} ${escHtml(r.lname)}</strong><br><span class="text-muted">${escHtml(r.email)}</span></td>
+      <td>${escHtml(r.farm_name)}</td>
+      <td>${escHtml(r.phone)}</td>
+      <td>${escHtml(r.location)}</td>
+      <td class="text-muted">${formatDbDate(r.request_date)}</td>
+      <td>${reqStatusBadge[r.status] || escHtml(r.status)}${r.status === 'Rejected' && r.admin_note ? `<br><span class="text-muted" style="font-size:10px;">${escHtml(r.admin_note)}</span>` : ''}</td>
+      <td>${r.status === 'Pending'
+        ? `<div class="flex-gap">
+             <button class="btn btn-sm" style="background:rgba(74,124,78,0.12);color:var(--sprout);" onclick="reviewProducerApplication(${r.application_id},'approve')">✅ Approve</button>
+             <button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="reviewProducerApplication(${r.application_id},'reject')">Reject</button>
+           </div>`
+        : '<span class="text-muted" style="font-size:11px;">Reviewed</span>'}</td>
+    </tr>`).join('');
+  } catch (e) { card.style.display = 'none'; console.info('Could not load applications:', e.message); }
+}
 
+async function reviewProducerApplication(id, action) {
+  let note = '';
+  if (action === 'reject') {
+    note = (prompt('Reason for rejecting this application:') || '').trim();
+    if (!note) { showToast('⚠️ A reason is required to reject.'); return; }
+  } else if (!confirm('Approve this application and create the producer account?')) return;
+  try {
+    await apiSend('PUT', 'producer_applications.php?id=' + id, {
+      action, admin_note: note, reviewer_user_id: currentUser ? currentUser.user_id : 0,
+    });
+    if (action === 'approve') _producerIdCache = null;
+    showToast(action === 'approve' ? '✅ Approved — producer account created. They can sign in now.' : '✅ Application rejected.');
+    loadProducerApplications();
+  } catch (e) { showToast('⚠️ ' + e.message); }
+}
 
 // ── EDIT USER (Admin User Management) ───────────────────────
 let editUserCurrentRole = 'admin';
@@ -1752,6 +1813,25 @@ async function submitProducerAddStock() {
   } catch (e) { showToast('⚠️ ' + e.message); }
 }
 
+let pendingCartSeed = null; // remembers what the guest tried to add
+
+function requireFarmerLogin(seedName) {
+  if (currentUser && currentUser.role === 'farmer') return true;
+  pendingCartSeed = seedName || null;
+  closeModal('modal-public-seed-detail');
+  openModal('modal-signin-required');
+  return false;
+}
+function goSignInAsFarmer() {
+  closeModal('modal-signin-required');
+  selectRole(document.getElementById('role-farmer'), 'farmer');
+  goToScreen('screen-login');
+}
+function goFarmerSignup() {
+  closeModal('modal-signin-required');
+  goToScreen('screen-farmer-signup');
+}
+
 // ═══════════════════════════════════════════════════════════
 // ── ONLINE ORDERING & PAYMENT (Cart → Checkout → Orders) ──────
 // Added per updated panel requirement: the system now supports
@@ -1799,6 +1879,7 @@ function parsePriceNum(priceStr) {
 }
 
 function addToCart(seedName) {
+  if (!requireFarmerLogin(seedName)) return;
   const s = seeds.find(x => x.name === seedName);
   if (!s) return;
   if (s.status === 'unavailable' || s.qtyNum <= 0) {
@@ -1846,6 +1927,7 @@ function updateCartBadges() {
 }
 
 function openCart() {
+  if (!requireFarmerLogin(null)) return;
   renderCartModal();
   openModal('modal-cart');
 }
@@ -1900,6 +1982,9 @@ function openCheckout() {
   ).join('') + `<div style="border-top:1px solid var(--parchment);margin-top:8px;padding-top:8px;" class="flex-between"><strong style="font-size:14px;">Total</strong><strong class="font-mono" style="font-size:14px;color:var(--bark);">₱${cartTotal().toLocaleString()}</strong></div>`;
   document.getElementById('checkout-payment-method').value = 'cash';
   togglePaymentRefField();
+  document.getElementById('checkout-name').value  = fullNameOf(currentUser);
+  document.getElementById('checkout-phone').value = currentUser.phone || '';
+  document.getElementById('checkout-email').value = currentUser.email || '';
   openModal('modal-checkout');
 }
 
@@ -1924,10 +2009,13 @@ async function submitCheckout() {
     }
   }
 
-  const isFarmerCheckout = document.getElementById('screen-farmer-dashboard')?.classList.contains('active')
-    || document.getElementById('screen-farmer-catalog')?.classList.contains('active')
-    || document.getElementById('screen-farmer-orders')?.classList.contains('active');
-  const customerRole = isFarmerCheckout ? 'farmer' : 'public';
+  if (!currentUser || currentUser.role !== 'farmer') {
+    showToast('⚠️ Please sign in as a Farmer to place this order.');
+    closeModal('modal-checkout');
+    openModal('modal-signin-required');
+    return;
+  }
+  const customerRole = 'farmer';
 
   if (customerRole === 'farmer' && usingLiveBackend && !currentUser) {
     showToast('⚠️ Please sign in as a Farmer to place this order.');
@@ -1997,6 +2085,53 @@ async function submitCheckout() {
   renderFarmerOrders();
 
   ['checkout-name','checkout-phone','checkout-email','checkout-payment-ref'].forEach(id => { document.getElementById(id).value = ''; });
+}
+
+// ═══ PRODUCER: ORDERS FOR MY PRODUCTS (live DB) ═══
+let producerOrders = [];
+
+async function openProducerOrders() {
+  const tbody = document.getElementById('producer-orders-tbody');
+  if (!usingLiveBackend || !currentUser || !currentUser.producer_name) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">Sign in as a producer on the live backend to see orders for your products.</td></tr>';
+    return;
+  }
+  try {
+    producerOrders = await apiGet('orders.php?producer_name=' + encodeURIComponent(currentUser.producer_name));
+    renderProducerOrders();
+  } catch (e) { showToast('⚠️ Could not load orders: ' + e.message); }
+}
+
+function renderProducerOrders() {
+  const tbody = document.getElementById('producer-orders-tbody');
+  const statsEl = document.getElementById('producer-orders-stats');
+  if (!tbody) return;
+  const sub = o => Number(o.my_subtotal) || 0;
+  const pending   = producerOrders.filter(o => o.status === 'Pending Payment').length;
+  const toPrepare = producerOrders.filter(o => o.status === 'Paid - Awaiting Pickup').length;
+  const sales     = producerOrders.filter(o => o.status !== 'Cancelled').reduce((s, o) => s + sub(o), 0);
+
+  statsEl.innerHTML = `
+    <div class="stat-card amber"><div class="stat-icon">🧾</div><div class="stat-value">${producerOrders.length}</div><div class="stat-label">Total Orders</div></div>
+    <div class="stat-card sage"><div class="stat-icon">⏳</div><div class="stat-value">${pending}</div><div class="stat-label">Pending Payment</div></div>
+    <div class="stat-card blue"><div class="stat-icon">📦</div><div class="stat-value">${toPrepare}</div><div class="stat-label">Paid — Prepare for Pickup</div></div>
+    <div class="stat-card green"><div class="stat-icon">💰</div><div class="stat-value">₱${sales.toLocaleString()}</div><div class="stat-label">My Sales (excl. cancelled)</div></div>`;
+
+  const f = document.getElementById('producer-orders-status-filter').value;
+  const list = f === 'all' ? producerOrders : producerOrders.filter(o => o.status === f);
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">No orders yet for your products.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(o => `<tr>
+    <td class="font-mono text-sm">${escHtml(o.order_id)}</td>
+    <td><strong>${escHtml(o.customer_name)}</strong><br><span class="text-muted text-sm">📞 ${escHtml(o.contact)}</span></td>
+    <td style="font-size:12px;">${o.items.map(i => escHtml(i.variety_name) + ' ×' + Number(i.quantity)).join('<br>')}</td>
+    <td class="font-mono">₱${sub(o).toLocaleString()}</td>
+    <td>${orderStatusBadge[o.status] || escHtml(o.status)}</td>
+    <td class="text-muted text-sm">${formatDbDate(o.date_ordered)}</td>
+    <td style="font-size:12px;">${escHtml(o.pickup_location)}</td>
+  </tr>`).join('');
 }
 
 // ── FARMER: My Orders screen ────────────────────────────────

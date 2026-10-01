@@ -135,7 +135,7 @@
         Root Crop Seed<br><em style="color:var(--harvest);font-style:normal;">Inventory</em> Platform
       </div>
       <div style="font-size:16px;color:rgba(245,237,216,0.72);max-width:540px;margin:0 auto 36px;line-height:1.7;">
-        Browse available seed varieties from accredited producers across Benguet, add what you need to your cart, and check out online — no account needed to browse, and no more back-and-forth with suppliers just to place an order.
+        Browse available seed varieties from accredited producers across Benguet, add what you need to your cart, and check out online.
       </div>
       <!-- Quick stats row -->
       <div style="display:flex;justify-content:center;gap:40px;flex-wrap:wrap;">
@@ -523,24 +523,28 @@
       <div class="sidebar-footer">PATATATAS v1.0.0 · Admin Panel</div>
     </nav>
     <div class="main-content">
-      <div class="rbac-banner admin">🛡️ Administrator — Register, verify, suspend, and manage accredited supplier accounts</div>
-      <div class="topbar"><div class="topbar-title">Supplier Management</div><div class="topbar-search"><span>🔍</span><input placeholder="Search suppliers…"></div><button class="btn btn-primary btn-sm" onclick="openModal('modal-add-supplier')">+ Register Supplier</button></div>
+      <div class="rbac-banner admin">🛡️ Administrator — Review producer applications and manage accredited supplier accounts</div>
+      <div class="topbar"><div class="topbar-title">Supplier Management</div><div class="topbar-search"><span>🔍</span><input placeholder="Search suppliers…"></div></div>
       <div class="page-body fade-in">
-        <div class="alert alert-warning">⚠️ <strong>2 supplier accounts</strong> are awaiting approval and cannot post inventory until verified. <span style="font-weight:600;">Per the Admin Approval Requirement, review their accreditation before activating.</span></div>
+        <div class="card mb-3" id="admin-applications-card" style="display:none;">
+          <div class="card-header"><span class="card-title" id="admin-applications-title">📥 Producer Applications</span><span class="text-muted text-sm">Approving creates the producer's login automatically</span></div>
+          <table class="data-table">
+            <thead><tr><th>Applicant</th><th>Farm / Organization</th><th>Contact</th><th>Location</th><th>Applied</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="admin-applications-tbody"></tbody>
+          </table>
+        </div>
         <div class="card">
-          <div class="card-header"><span class="card-title">Accredited Suppliers (19 Active + 2 Pending)</span><button class="btn btn-secondary btn-sm">Export List</button></div>
+          <div class="card-header"><span class="card-title">Accredited Suppliers</span><button class="btn btn-secondary btn-sm">Export List</button></div>
           <table class="data-table">
             <thead><tr><th>#</th><th>Supplier / Farm</th><th>Location</th><th>Varieties</th><th>Total Stock</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               <tr><td class="font-mono text-muted">01</td><td><div style="font-weight:700;">BSU-NPRCRTC</div><div class="text-muted">Primary Accredited Producer</div></td><td>La Trinidad, Benguet</td><td class="font-mono">12</td><td class="font-mono">4,190 kg</td><td><span class="badge badge-available">Active</span></td><td><div class="flex-gap"><button class="btn btn-ghost btn-sm" onclick="openSupplierStock('BSU-NPRCRTC','La Trinidad, Benguet','(074) 422-2435','BPI-2019-0001','Active · Expires Dec 2026',12,'4,190 kg')">📦 View Stock</button><button class="btn btn-sm" style="background:rgba(243,156,18,0.1);color:var(--warning)" onclick="showToast('BSU-NPRCRTC suspension requires system admin approval.')">Suspend</button></div></td></tr>
               <tr><td class="font-mono text-muted">02</td><td><div style="font-weight:700;">Nelio Compelio Farm</div><div class="text-muted">ARC Seed Producer</div></td><td>Kabayan, Benguet</td><td class="font-mono">5</td><td class="font-mono">426 kg</td><td><span class="badge badge-available">Active</span></td><td><div class="flex-gap"><button class="btn btn-ghost btn-sm" onclick="openSupplierStock('Nelio Compelio Farm','Kabayan, Benguet','+63 916 123 4567','BPI-2022-0048','Active · Expires Dec 2026',5,'426 kg')">📦 View Stock</button><button class="btn btn-sm" style="background:rgba(243,156,18,0.1);color:var(--warning)" onclick="showToast('Supplier suspended. Their stock will be hidden from farmers.')">Suspend</button></div></td></tr>
-              <tr><td class="font-mono text-muted">03</td><td><div style="font-weight:700;">Susan Bokilis Greenhouse</div><div class="text-muted">ARC & Minituber Producer</div></td><td>Atok, Benguet</td><td class="font-mono">4</td><td class="font-mono">730 kg</td><td><span class="badge badge-available">Active</span></td><td><div class="flex-gap"><button class="btn btn-ghost btn-sm" onclick="openSupplierStock('Susan Bokilis Greenhouse','Atok, Benguet','+63 917 234 5678','BPI-2020-0033','Active · Expires Jun 2027',4,'730 kg')">📦 View Stock</button><button class="btn btn-sm" style="background:rgba(243,156,18,0.1);color:var(--warning)" onclick="showToast('Supplier suspended. Their stock will be hidden from farmers.')">Suspend</button></div></td></tr>
+              <tr><td class="font-mono text-muted">03</td><td><div style="font-weight:700;">Susan Bokilis Greenhouse</div><div class="text-muted">ARC &amp; Minituber Producer</div></td><td>Atok, Benguet</td><td class="font-mono">4</td><td class="font-mono">730 kg</td><td><span class="badge badge-available">Active</span></td><td><div class="flex-gap"><button class="btn btn-ghost btn-sm" onclick="openSupplierStock('Susan Bokilis Greenhouse','Atok, Benguet','+63 917 234 5678','BPI-2020-0033','Active · Expires Jun 2027',4,'730 kg')">📦 View Stock</button><button class="btn btn-sm" style="background:rgba(243,156,18,0.1);color:var(--warning)" onclick="showToast('Supplier suspended. Their stock will be hidden from farmers.')">Suspend</button></div></td></tr>
               <tr><td class="font-mono text-muted">04</td><td><div style="font-weight:700;">Antonio Family Farm</div><div class="text-muted">Certified Seed Grower</div></td><td>Buguias, Benguet</td><td class="font-mono">6</td><td class="font-mono">338 kg</td><td><span class="badge badge-available">Active</span></td><td><div class="flex-gap"><button class="btn btn-ghost btn-sm" onclick="openSupplierStock('Antonio Family Farm','Buguias, Benguet','+63 918 765 4321','BPI-2021-0067','Active · Expires Mar 2027',6,'338 kg')">📦 View Stock</button><button class="btn btn-sm" style="background:rgba(243,156,18,0.1);color:var(--warning)" onclick="showToast('Supplier suspended. Their stock will be hidden from farmers.')">Suspend</button></div></td></tr>
-              <tr id="supplier-row-dangwa"><td class="font-mono text-muted">05</td><td><div style="font-weight:700;">Dangwa Highland Seeds</div><div class="text-muted">Root Crops Producer</div></td><td>Tublay, Benguet</td><td class="font-mono">3</td><td class="font-mono">490 kg</td><td><span class="badge badge-low">● Pending Approval</span></td><td><div class="flex-gap"><button class="btn btn-ghost btn-sm" onclick="openSupplierStock('Dangwa Highland Seeds','Tublay, Benguet','+63 919 888 1234','BPI-2023-0091','Pending Approval',3,'490 kg')">📦 Review Listing</button><button class="btn btn-sm" style="background:rgba(74,124,78,0.12);color:var(--sprout)" onclick="approveSupplier(this,'Dangwa Highland Seeds')">✅ Approve</button><button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger)" onclick="rejectSupplier(this,'Dangwa Highland Seeds')">Reject</button></div></td></tr>
-              <tr id="supplier-row-newapp"><td class="font-mono text-muted">06</td><td><div style="font-weight:700;">Highland Roots Cooperative</div><div class="text-muted">New Producer Application</div></td><td>Buguias, Benguet</td><td class="font-mono">0</td><td class="font-mono">— kg</td><td><span class="badge badge-low">● Pending Approval</span></td><td><div class="flex-gap"><button class="btn btn-ghost btn-sm" onclick="showToast('ℹ️ No stock submitted yet — supplier has not been activated.')">📄 View Application</button><button class="btn btn-sm" style="background:rgba(74,124,78,0.12);color:var(--sprout)" onclick="approveSupplier(this,'Highland Roots Cooperative')">✅ Approve</button><button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger)" onclick="rejectSupplier(this,'Highland Roots Cooperative')">Reject</button></div></td></tr>
             </tbody>
           </table>
-          <div class="card-body" style="padding:14px 22px;border-top:1px solid var(--parchment);"><div class="flex-between"><span class="text-muted">Showing 6 of 21 suppliers (incl. 2 pending approval)</span><div class="pagination"><div class="page-btn active">1</div><div class="page-btn">2</div><div class="page-btn">3</div><div class="page-btn">4</div><div class="page-btn">›</div></div></div></div>
+          <div class="card-body" style="padding:14px 22px;border-top:1px solid var(--parchment);"><div class="flex-between"><span class="text-muted">Showing 4 accredited suppliers</span></div></div>
         </div>
       </div>
     </div>
@@ -802,6 +806,7 @@
         <div class="nav-item active" onclick="producerNav('screen-producer-dashboard',this)"><span class="nav-icon">📊</span> My Dashboard</div>
         <div class="nav-item" onclick="producerNav('screen-producer-inventory',this)"><span class="nav-icon">📦</span> My Stock</div>
         <div class="nav-item" onclick="producerNav('screen-producer-catalog',this)"><span class="nav-icon">🌱</span> Browse Catalog</div>
+        <div class="nav-item" onclick="producerNav('screen-producer-orders',this)"><span class="nav-icon">🧾</span> Orders</div>
         <div class="nav-section-label">Account</div>
         <div class="nav-item" onclick="producerNav('screen-producer-profile',this)"><span class="nav-icon">🏭</span> Farm Profile</div>
         <div class="nav-item" onclick="goToScreen('screen-login')"><span class="nav-icon">🚪</span> Sign Out</div>
@@ -858,6 +863,7 @@
         <div class="nav-item" onclick="producerNav('screen-producer-dashboard',this)"><span class="nav-icon">📊</span> My Dashboard</div>
         <div class="nav-item active" onclick="producerNav('screen-producer-inventory',this)"><span class="nav-icon">📦</span> My Stock</div>
         <div class="nav-item" onclick="producerNav('screen-producer-catalog',this)"><span class="nav-icon">🌱</span> Browse Catalog</div>
+        <div class="nav-item" onclick="producerNav('screen-producer-orders',this)"><span class="nav-icon">🧾</span> Orders</div>
         <div class="nav-section-label">Account</div>
         <div class="nav-item" onclick="producerNav('screen-producer-profile',this)"><span class="nav-icon">🏭</span> Farm Profile</div>
         <div class="nav-item" onclick="goToScreen('screen-login')"><span class="nav-icon">🚪</span> Sign Out</div>
@@ -959,6 +965,7 @@
         <div class="nav-item" onclick="producerNav('screen-producer-dashboard',this)"><span class="nav-icon">📊</span> My Dashboard</div>
         <div class="nav-item" onclick="producerNav('screen-producer-inventory',this)"><span class="nav-icon">📦</span> My Stock</div>
         <div class="nav-item" onclick="producerNav('screen-producer-catalog',this)"><span class="nav-icon">🌱</span> Browse Catalog</div>
+        <div class="nav-item" onclick="producerNav('screen-producer-orders',this)"><span class="nav-icon">🧾</span> Orders</div>
         <div class="nav-section-label">Account</div>
         <div class="nav-item active" onclick="producerNav('screen-producer-profile',this)"><span class="nav-icon">🏭</span> Farm Profile</div>
         <div class="nav-item" onclick="goToScreen('screen-login')"><span class="nav-icon">🚪</span> Sign Out</div>
@@ -1038,6 +1045,49 @@
   </div>
 </div>
 
+<!-- PRODUCER: Orders -->
+<div id="screen-producer-orders" class="screen">
+  <div class="app-layout">
+    <nav class="sidebar">
+      <div class="sidebar-brand"><div class="brand-logo"><div class="brand-icon">🥔</div><div class="brand-name">PATATATAS</div></div><div class="brand-sub">BSU-NPRCRTC System</div></div>
+      <div class="sidebar-user"><div class="user-avatar" style="background:rgba(74,124,78,0.3);color:var(--leaf);">NC</div><div class="user-info"><div class="user-name">Nelio Compelio</div><div class="user-role">Kabayan, Benguet</div><div class="role-tag producer">Producer</div></div></div>
+      <div class="sidebar-nav">
+        <div class="nav-section-label">My Inventory</div>
+        <div class="nav-item" onclick="producerNav('screen-producer-dashboard',this)"><span class="nav-icon">📊</span> My Dashboard</div>
+        <div class="nav-item" onclick="producerNav('screen-producer-inventory',this)"><span class="nav-icon">📦</span> My Stock</div>
+        <div class="nav-item" onclick="producerNav('screen-producer-catalog',this)"><span class="nav-icon">🌱</span> Browse Catalog</div>
+        <div class="nav-item active" onclick="producerNav('screen-producer-orders',this)"><span class="nav-icon">🧾</span> Orders</div>
+        <div class="nav-section-label">Account</div>
+        <div class="nav-item" onclick="producerNav('screen-producer-profile',this)"><span class="nav-icon">🏭</span> Farm Profile</div>
+        <div class="nav-item" onclick="goToScreen('screen-login')"><span class="nav-icon">🚪</span> Sign Out</div>
+      </div>
+      <div class="sidebar-footer">PATATATAS v1.0.0 · Producer Portal</div>
+    </nav>
+    <div class="main-content">
+      <div class="rbac-banner producer">🌱 Producer — Orders that include your varieties. Payment and pickup status are managed by BSU-NPRCRTC Admin.</div>
+      <div class="topbar">
+        <div class="topbar-title">Orders for My Products</div>
+        <select class="form-control" id="producer-orders-status-filter" style="width:auto;padding:8px 12px;font-size:13px;" onchange="renderProducerOrders()">
+          <option value="all">All Statuses</option>
+          <option value="Pending Payment">Pending Payment</option>
+          <option value="Paid - Awaiting Pickup">Paid - Awaiting Pickup</option>
+          <option value="Completed">Completed</option>
+          <option value="Cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div class="page-body fade-in">
+        <div class="stats-grid" id="producer-orders-stats" style="grid-template-columns:repeat(4,1fr);"></div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Orders Containing My Varieties</span></div>
+          <table class="data-table">
+            <thead><tr><th>Order ID</th><th>Buyer</th><th>My Items</th><th>My Subtotal</th><th>Status</th><th>Placed</th><th>Pickup</th></tr></thead>
+            <tbody id="producer-orders-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ════════════════════════════════════════════════════════════
      ██████████████  FARMER SCREENS  ██████████████
@@ -1459,7 +1509,7 @@
   </div>
 </div>
 
-<!-- Admin: Register Supplier -->
+<!-- Admin: Register Supplier
 <div id="modal-add-supplier" class="modal-overlay">
   <div class="modal-box">
     <div class="modal-header"><span class="modal-title">🏭 Register New Supplier</span><button class="modal-close" onclick="closeModal('modal-add-supplier')">×</button></div>
@@ -1495,7 +1545,7 @@
       <button class="btn btn-primary" onclick="submitRegisterSupplier()">Register Supplier</button>
     </div>
   </div>
-</div>
+</div> -->
 
 <!-- Producer: Update Own Stock (pre-filled per row) -->
 <div id="modal-producer-update-stock" class="modal-overlay">
@@ -1657,6 +1707,22 @@
     <div class="modal-footer">
       <button class="btn btn-sm" style="background:rgba(192,57,43,0.1);color:var(--danger);" onclick="submitReviewRequest('reject')">Reject</button>
       <button class="btn btn-primary" onclick="submitReviewRequest('approve')">✅ Approve & Create Variety</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sign-in required (guest clicked Add to Cart) -->
+<div id="modal-signin-required" class="modal-overlay">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="modal-header"><span class="modal-title">🔐 Sign in to order</span><button class="modal-close" onclick="closeModal('modal-signin-required')">×</button></div>
+    <div class="modal-body" style="text-align:center;">
+      <div style="font-size:46px;margin-bottom:10px;">👨‍🌾</div>
+      <div style="font-size:14px;font-weight:700;color:var(--earth);margin-bottom:6px;">Please sign in as a Farmer first</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6;">BSU-NPRCRTC records who buys each seed variety, so orders can only be placed from a Farmer account. Browsing stays free.</div>
+    </div>
+    <div class="modal-footer" style="flex-direction:column;gap:8px;">
+      <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="goSignInAsFarmer()">Sign in as Farmer →</button>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;" onclick="goFarmerSignup()">Create a Farmer account</button>
     </div>
   </div>
 </div>
